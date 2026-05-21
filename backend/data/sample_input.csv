@@ -1,0 +1,4 @@
+customer_id,full_name,email,phone_number,date_of_birth,city,account_balance
+C2001,Mohith Prasanna,mohith@email.com,2145551111,1998-04-15,Irving,12000
+C2002,Rahul Mehta,rahul@email.com,9725552222,1995-06-20,Dallas,9000
+C2003,Priya Nair,priya@email.com,4695553333,1997-01-12,Austin,15000
