@@ -15,14 +15,12 @@ import {
   Activity,
   Lock,
   ChevronRight,
+  Layers,
+  Send,
 } from "lucide-react";
 
 function Card({ children, className = "" }) {
-  return (
-    <div className={`bg-white border border-slate-200 ${className}`}>
-      {children}
-    </div>
-  );
+  return <div className={`bg-white border border-slate-200 ${className}`}>{children}</div>;
 }
 
 function CardContent({ children, className = "" }) {
@@ -46,10 +44,10 @@ function Button({ children, onClick, disabled, variant = "default", className = 
 }
 
 const sampleColumns = [
-  { name: "customer_id", type: "string", pii: false, rule: "Hash" },
-  { name: "full_name", type: "string", pii: true, rule: "Fake Name" },
-  { name: "email", type: "string", pii: true, rule: "Fake Email" },
-  { name: "phone_number", type: "string", pii: true, rule: "Fake Phone" },
+  { name: "customer_id", type: "string", pii: true, rule: "Hash" },
+  { name: "full_name", type: "string", pii: true, rule: "Fake Value" },
+  { name: "email", type: "string", pii: true, rule: "Fake Value" },
+  { name: "phone_number", type: "string", pii: true, rule: "Fake Value" },
   { name: "date_of_birth", type: "date", pii: true, rule: "Date Shift" },
   { name: "city", type: "string", pii: false, rule: "No Masking" },
   { name: "account_balance", type: "decimal", pii: false, rule: "No Masking" },
@@ -74,6 +72,146 @@ function MetricCard({ icon: Icon, label, value, helper }) {
           </div>
           <div className="rounded-2xl bg-slate-100 p-3">
             <Icon className="h-5 w-5 text-slate-700" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SideMenu({ activeStep }) {
+  const menuItems = [
+    {
+      label: "Extraction",
+      description: "Upload or generate source data",
+      icon: Database,
+      active: activeStep === 1,
+      completed: activeStep > 1,
+    },
+    {
+      label: "Anonymization",
+      description: "Configure rules and run masking",
+      icon: Shield,
+      active: activeStep === 2 || activeStep === 3,
+      completed: activeStep > 3,
+    },
+    {
+      label: "Publish",
+      description: "Review, audit, and download output",
+      icon: Send,
+      active: activeStep === 4,
+      completed: false,
+    },
+  ];
+
+  return (
+    <aside className="w-full rounded-3xl bg-slate-950 p-5 text-white shadow-sm lg:min-h-screen lg:w-80">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-white/10 p-3">
+          <Layers className="h-6 w-6" />
+        </div>
+        <div>
+          <p className="text-sm uppercase tracking-wide text-slate-400">TDM Workflow</p>
+          <h2 className="text-xl font-semibold text-white">Control Panel</h2>
+        </div>
+      </div>
+
+      <div className="mt-8 space-y-3">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <div
+              key={item.label}
+              className={`rounded-2xl border p-4 transition ${
+                item.active
+                  ? "border-white bg-white text-slate-950"
+                  : item.completed
+                  ? "border-emerald-400/40 bg-emerald-400/10 text-white"
+                  : "border-white/10 bg-white/5 text-slate-300"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`rounded-xl p-2 ${item.active ? "bg-slate-100" : "bg-white/10"}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <p className="font-medium">{item.label}</p>
+                  <p className={`mt-1 text-xs ${item.active ? "text-slate-500" : "text-slate-400"}`}>
+                    {item.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <p className="text-sm font-medium text-white">MVP Scope</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          Supports CSV extraction, synthetic test data generation, configurable anonymization,
+          audit preview, job history, masked output download, and assistant support.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+function WorkflowProgress({ activeStep }) {
+  const stages = [
+    { label: "Extraction", range: [1] },
+    { label: "Anonymization", range: [2, 3] },
+    { label: "Publish", range: [4] },
+  ];
+
+  const getStageStatus = (stage) => {
+    const maxStep = Math.max(...stage.range);
+    const minStep = Math.min(...stage.range);
+
+    if (activeStep > maxStep) return "completed";
+    if (activeStep >= minStep && activeStep <= maxStep) return "active";
+    return "pending";
+  };
+
+  const progressPercent =
+    activeStep === 1 ? "20%" : activeStep === 2 ? "45%" : activeStep === 3 ? "70%" : "100%";
+
+  return (
+    <Card className="rounded-2xl shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            {stages.map((stage, index) => {
+              const status = getStageStatus(stage);
+
+              return (
+                <div key={stage.label} className="flex flex-col items-center text-center">
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
+                      status === "completed"
+                        ? "bg-emerald-600 text-white"
+                        : status === "active"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {status === "completed" ? "✓" : index + 1}
+                  </div>
+                  <p className={`mt-2 text-xs font-medium ${status === "active" ? "text-slate-900" : "text-slate-500"}`}>
+                    {stage.label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-slate-900 transition-all duration-500"
+              style={{ width: progressPercent }}
+            />
           </div>
         </div>
       </CardContent>
@@ -112,18 +250,28 @@ function Stepper({ activeStep }) {
   );
 }
 
-function SourceStep({ onNext }) {
+function SourceStep({ onNext, onDatasetUploaded }) {
   const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [uploadMessage, setUploadMessage] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState(null);
+  const [testTemplate, setTestTemplate] = useState("customer");
+  const [rowCount, setRowCount] = useState(100);
+
+  const handleDatasetReady = (responseData, displayName) => {
+    setSelectedFileName(displayName);
+
+    onDatasetUploaded({
+      datasetId: responseData.dataset_id,
+      columns: Array.isArray(responseData.columns) ? responseData.columns : sampleColumns,
+    });
+  };
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
 
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     if (!file.name.endsWith(".csv")) {
       setUploadError("Please upload a CSV file.");
@@ -148,6 +296,7 @@ function SourceStep({ onNext }) {
 
       if (response.data.status === "SUCCESS") {
         setUploadMessage(`Uploaded successfully: ${file.name}`);
+        handleDatasetReady(response.data, file.name);
       } else {
         setUploadError(response.data.message || "Upload failed.");
       }
@@ -160,38 +309,62 @@ function SourceStep({ onNext }) {
     }
   };
 
+  const handleGenerateTestData = async () => {
+    try {
+      setGenerating(true);
+      setUploadError(null);
+      setUploadMessage(null);
+
+      const response = await axios.post("http://127.0.0.1:8000/generate-test-data", {
+        template: testTemplate,
+        row_count: Number(rowCount),
+      });
+
+      if (response.data.status === "SUCCESS") {
+        setUploadMessage(
+          `Generated ${response.data.row_count} rows of ${response.data.template} test data.`
+        );
+
+        handleDatasetReady(response.data, response.data.filename);
+      } else {
+        setUploadError(response.data.message || "Test data generation failed.");
+      }
+
+      setGenerating(false);
+    } catch (err) {
+      console.error(err);
+      setGenerating(false);
+      setUploadError("Unable to generate test data. Make sure FastAPI is running.");
+    }
+  };
+
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Card className="rounded-2xl shadow-sm">
+    <div className="grid gap-5 lg:grid-cols-3">
+      <Card className="rounded-2xl shadow-sm lg:col-span-1">
         <CardContent className="p-6">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-slate-100 p-3">
               <Database className="h-6 w-6 text-slate-700" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Select Source Table</h2>
-              <p className="text-sm text-slate-500">
-                Choose the dataset that needs anonymization.
-              </p>
+              <h2 className="text-lg font-semibold text-slate-900">Source Dataset</h2>
+              <p className="text-sm text-slate-500">Upload or generate data for anonymization.</p>
             </div>
           </div>
 
           <div className="mt-6 space-y-3">
             <label className="text-sm font-medium text-slate-700">Connection</label>
             <select className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
-              <option>Local Uploaded CSV</option>
+              <option>Local Uploaded CSV / Generated Test Data</option>
               <option>Databricks Unity Catalog</option>
               <option>PostgreSQL</option>
               <option>Oracle</option>
               <option>Azure SQL</option>
             </select>
 
-            <label className="text-sm font-medium text-slate-700">Source Object</label>
+            <label className="text-sm font-medium text-slate-700">Selected Dataset</label>
             <select className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
-              <option>backend/data/sample_input.csv</option>
-              <option>customer_raw.personal_details</option>
-              <option>claims_raw.member_profile</option>
-              <option>banking_raw.account_master</option>
+              <option>{selectedFileName || "Upload or generate a dataset"}</option>
             </select>
           </div>
 
@@ -202,12 +375,12 @@ function SourceStep({ onNext }) {
                 <p className="text-xs text-slate-500">Source Type</p>
               </div>
               <div>
-                <p className="text-xl font-semibold text-slate-900">Dynamic</p>
-                <p className="text-xs text-slate-500">Rows</p>
+                <p className="text-xl font-semibold text-slate-900">Auto</p>
+                <p className="text-xs text-slate-500">Schema Detection</p>
               </div>
               <div>
                 <p className="text-xl font-semibold text-slate-900">Rules</p>
-                <p className="text-xs text-slate-500">User Selected</p>
+                <p className="text-xs text-slate-500">Suggested</p>
               </div>
             </div>
           </div>
@@ -225,70 +398,123 @@ function SourceStep({ onNext }) {
             <Upload className="h-9 w-9 text-slate-700" />
           </div>
 
-          <h3 className="mt-5 text-lg font-semibold text-slate-900">Upload Sample CSV</h3>
+          <h3 className="mt-5 text-lg font-semibold text-slate-900">Upload CSV</h3>
 
           <p className="mt-2 max-w-sm text-sm text-slate-500">
-            Upload a CSV file and the backend will use it as the source dataset for anonymization.
+            Upload a CSV file and the backend will detect columns and suggest masking rules.
           </p>
 
           <label className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50">
             {uploading ? "Uploading..." : "Choose CSV File"}
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploading}
-            />
+            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" disabled={uploading} />
           </label>
-
-          {selectedFileName && (
-            <p className="mt-3 text-xs text-slate-500">Selected file: {selectedFileName}</p>
-          )}
-
-          {uploadMessage && (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-              {uploadMessage}
-            </div>
-          )}
-
-          {uploadError && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {uploadError}
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-slate-100 p-3">
+              <FileText className="h-6 w-6 text-slate-700" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Generate Test Data</h3>
+              <p className="text-sm text-slate-500">Create synthetic data for demo and testing.</p>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <label className="text-sm font-medium text-slate-700">Template</label>
+            <select
+              value={testTemplate}
+              onChange={(e) => setTestTemplate(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+            >
+              <option value="customer">Customer Data</option>
+              <option value="account">Account Data</option>
+              <option value="claims">Claims Data</option>
+              <option value="employee">Employee Data</option>
+            </select>
+
+            <label className="text-sm font-medium text-slate-700">Row Count</label>
+            <input
+              type="number"
+              min="1"
+              max="10000"
+              value={rowCount}
+              onChange={(e) => setRowCount(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+            />
+          </div>
+
+          <Button onClick={handleGenerateTestData} disabled={generating} className="mt-6 w-full rounded-xl">
+            {generating ? "Generating..." : "Generate Test Data"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {(selectedFileName || uploadMessage || uploadError) && (
+        <Card className="rounded-2xl shadow-sm lg:col-span-3">
+          <CardContent className="p-5">
+            {selectedFileName && (
+              <p className="text-sm text-slate-600">
+                Selected dataset: <span className="font-medium text-slate-900">{selectedFileName}</span>
+              </p>
+            )}
+
+            {uploadMessage && (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                {uploadMessage}
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {uploadError}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function RulesStep({ onNext, onRulesChange }) {
-  const [columns, setColumns] = useState(sampleColumns);
+function RulesStep({ onNext, onRulesChange, detectedColumns }) {
+  const safeDetectedColumns =
+    Array.isArray(detectedColumns) && detectedColumns.length > 0 ? detectedColumns : sampleColumns;
+
+  const [columns, setColumns] = useState(safeDetectedColumns);
+
+  useEffect(() => {
+    const safeColumns =
+      Array.isArray(detectedColumns) && detectedColumns.length > 0 ? detectedColumns : sampleColumns;
+
+    setColumns(safeColumns);
+  }, [detectedColumns]);
+
+  useEffect(() => {
+    const selectedRules = {};
+
+    columns.forEach((col) => {
+      selectedRules[col.name] = col.rule || "No Masking";
+    });
+
+    onRulesChange(selectedRules);
+  }, [columns, onRulesChange]);
 
   const updateRule = (name, rule) => {
-  const updatedColumns = columns.map((col) =>
-    col.name === name ? { ...col, rule } : col
-  );
+    const updatedColumns = columns.map((col) => (col.name === name ? { ...col, rule } : col));
 
-  setColumns(updatedColumns);
+    setColumns(updatedColumns);
 
-  const selectedRules = {};
-  updatedColumns.forEach((col) => {
-    selectedRules[col.name] = col.rule;
-  });
+    const selectedRules = {};
+    updatedColumns.forEach((col) => {
+      selectedRules[col.name] = col.rule || "No Masking";
+    });
 
-  onRulesChange(selectedRules);
-};
-
-useEffect(() => {
-  const selectedRules = {};
-  columns.forEach((col) => {
-    selectedRules[col.name] = col.rule;
-  });
-
-  onRulesChange(selectedRules);
-}, []);
+    onRulesChange(selectedRules);
+  };
 
   return (
     <Card className="rounded-2xl shadow-sm">
@@ -296,17 +522,16 @@ useEffect(() => {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Configure Masking Rules</h2>
-            <p className="text-sm text-slate-500">
-              Review detected columns and assign anonymization rules.
-            </p>
+            <p className="text-sm text-slate-500">Review detected columns and assign anonymization rules.</p>
           </div>
+
           <Button variant="outline" className="rounded-xl">
             Auto Detect PII
           </Button>
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-          <table className="w-full text-left text-sm">
+        <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Column</th>
@@ -315,11 +540,14 @@ useEffect(() => {
                 <th className="px-4 py-3 font-medium">Masking Rule</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100">
               {columns.map((col) => (
                 <tr key={col.name} className="bg-white">
                   <td className="px-4 py-3 font-medium text-slate-900">{col.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{col.type}</td>
+
+                  <td className="px-4 py-3 text-slate-600">{col.type || "unknown"}</td>
+
                   <td className="px-4 py-3">
                     {col.pii ? (
                       <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
@@ -331,19 +559,18 @@ useEffect(() => {
                       </span>
                     )}
                   </td>
+
                   <td className="px-4 py-3">
                     <select
-                      value={col.rule}
+                      value={col.rule || "No Masking"}
                       onChange={(e) => updateRule(col.name, e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
                     >
                       <option>No Masking</option>
-                      <option>Fake Name</option>
-                      <option>Fake Email</option>
-                      <option>Fake Phone</option>
+                      <option>Fake Value</option>
+                      <option>Partial Masking</option>
                       <option>Date Shift</option>
                       <option>Hash</option>
-                      <option>Partial Mask</option>
                     </select>
                   </td>
                 </tr>
@@ -363,7 +590,7 @@ useEffect(() => {
   );
 }
 
-function RunStep({ onNext, onJobCreated, maskingRules }) {
+function RunStep({ onNext, onJobCreated, maskingRules, datasetId }) {
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
   const [jobId, setJobId] = useState(null);
@@ -378,17 +605,28 @@ function RunStep({ onNext, onJobCreated, maskingRules }) {
       setJobId(null);
       setJobDetails(null);
 
+      if (!datasetId) {
+        setRunning(false);
+        setError("Please upload, generate, or select a dataset before running anonymization.");
+        return;
+      }
+
       const runResponse = await axios.post("http://127.0.0.1:8000/jobs/run", {
+        dataset_id: datasetId,
         masking_rules: maskingRules,
       });
+
+      if (runResponse.data.status === "FAILED") {
+        setRunning(false);
+        setError(runResponse.data.message || "Job failed.");
+        return;
+      }
 
       const newJobId = runResponse.data.job_id;
       setJobId(newJobId);
       onJobCreated(newJobId);
 
-      const statusResponse = await axios.get(
-        `http://127.0.0.1:8000/jobs/${newJobId}/status`
-      );
+      const statusResponse = await axios.get(`http://127.0.0.1:8000/jobs/${newJobId}/status`);
 
       setJobDetails(statusResponse.data);
       setRunning(false);
@@ -428,7 +666,7 @@ function RunStep({ onNext, onJobCreated, maskingRules }) {
                   </p>
                   <p className="text-sm text-slate-500">
                     {complete
-                      ? "Backend returned a completed anonymization job."
+                      ? "Backend completed anonymization for the selected dataset."
                       : running
                       ? "Submitting request to FastAPI backend."
                       : "Review configuration and start anonymization."}
@@ -470,13 +708,13 @@ function RunStep({ onNext, onJobCreated, maskingRules }) {
             <MetricCard
               icon={Database}
               label="Rows Processed"
-              value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "656,036"}
-              helper="From backend response"
+              value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "Pending"}
+              helper={jobDetails?.dataset_name || "Selected dataset"}
             />
             <MetricCard
               icon={Lock}
               label="Columns Masked"
-              value={jobDetails ? jobDetails.columns_masked : "4"}
+              value={jobDetails ? jobDetails.columns_masked : "Pending"}
               helper="PII fields protected"
             />
             <MetricCard
@@ -503,13 +741,13 @@ function RunStep({ onNext, onJobCreated, maskingRules }) {
           <h3 className="font-semibold text-slate-900">Backend Connected</h3>
           <div className="mt-5 space-y-4 text-sm text-slate-600">
             <div className="rounded-xl bg-slate-50 p-4">
-              React now sends a request to FastAPI instead of only simulating the job.
+              React sends selected dataset ID and masking rules to FastAPI.
             </div>
             <div className="rounded-xl bg-slate-50 p-4">
-              FastAPI returns a job ID, status, row count, and audit-ready metadata.
+              FastAPI runs anonymization on uploaded or generated CSV data.
             </div>
             <div className="rounded-xl bg-slate-50 p-4">
-              Later, this same API will trigger Databricks Jobs.
+              Later, this same API can trigger Databricks Jobs for large tables.
             </div>
           </div>
         </CardContent>
@@ -519,6 +757,17 @@ function RunStep({ onNext, onJobCreated, maskingRules }) {
 }
 
 function PreviewTable({ title, rows, warning = false }) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return (
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <p className="mt-3 text-sm text-slate-500">No preview rows available.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const headers = Object.keys(rows[0]);
 
   return (
@@ -537,8 +786,8 @@ function PreviewTable({ title, rows, warning = false }) {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="w-full min-w-[760px] text-left text-xs">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 {headers.map((header) => (
@@ -553,7 +802,7 @@ function PreviewTable({ title, rows, warning = false }) {
                 <tr key={index}>
                   {headers.map((header) => (
                     <td key={header} className="px-3 py-3 text-slate-700">
-                      {row[header]}
+                      {String(row[header])}
                     </td>
                   ))}
                 </tr>
@@ -583,13 +832,8 @@ function ReviewStep({ jobId }) {
         setLoading(true);
         setError(null);
 
-        const previewResponse = await axios.get(
-          `http://127.0.0.1:8000/jobs/${jobId}/preview`
-        );
-
-        const auditResponse = await axios.get(
-          `http://127.0.0.1:8000/jobs/${jobId}/audit`
-        );
+        const previewResponse = await axios.get(`http://127.0.0.1:8000/jobs/${jobId}/preview`);
+        const auditResponse = await axios.get(`http://127.0.0.1:8000/jobs/${jobId}/audit`);
 
         setPreviewData(previewResponse.data);
         setAuditData(auditResponse.data.audit);
@@ -618,17 +862,13 @@ function ReviewStep({ jobId }) {
     return (
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error}
-          </div>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
         </CardContent>
       </Card>
     );
   }
 
-  if (!previewData || !auditData) {
-    return null;
-  }
+  if (!previewData || !auditData) return null;
 
   const auditRows = [
     { metric: "Total rows processed", value: auditData.total_rows_processed.toLocaleString() },
@@ -650,7 +890,7 @@ function ReviewStep({ jobId }) {
           </div>
 
           <a
-            href="http://127.0.0.1:8000/download/masked-output"
+            href={`http://127.0.0.1:8000/download/masked-output/${jobId}`}
             download
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
           >
@@ -672,9 +912,7 @@ function ReviewStep({ jobId }) {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Audit Summary</h2>
-              <p className="text-sm text-slate-500">
-                Generated by backend after anonymization run.
-              </p>
+              <p className="text-sm text-slate-500">Generated by backend after anonymization run.</p>
             </div>
           </div>
 
@@ -683,9 +921,7 @@ function ReviewStep({ jobId }) {
               <tbody className="divide-y divide-slate-100">
                 {auditRows.map((row) => (
                   <tr key={row.metric}>
-                    <td className="bg-slate-50 px-4 py-3 font-medium text-slate-700">
-                      {row.metric}
-                    </td>
+                    <td className="bg-slate-50 px-4 py-3 font-medium text-slate-700">{row.metric}</td>
                     <td className="px-4 py-3 text-slate-900">{row.value}</td>
                   </tr>
                 ))}
@@ -736,42 +972,177 @@ function DashboardSummary() {
 
   useEffect(() => {
     fetchSummary();
-
     const interval = setInterval(fetchSummary, 3000);
-
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <MetricCard
-        icon={Activity}
-        label="Total Jobs"
-        value={summary.totalJobs}
-        helper="Backend session runs"
-      />
-
-      <MetricCard
-        icon={CheckCircle2}
-        label="Latest Status"
-        value={summary.latestStatus}
-        helper="Most recent job"
-      />
-
-      <MetricCard
-        icon={Database}
-        label="Latest Rows"
-        value={summary.latestRows.toLocaleString()}
-        helper="Rows processed"
-      />
-
-      <MetricCard
-        icon={FileText}
-        label="Masked Output"
-        value={summary.outputAvailable}
-        helper="CSV available"
-      />
+      <MetricCard icon={Activity} label="Total Jobs" value={summary.totalJobs} helper="Backend session runs" />
+      <MetricCard icon={CheckCircle2} label="Latest Status" value={summary.latestStatus} helper="Most recent job" />
+      <MetricCard icon={Database} label="Latest Rows" value={summary.latestRows.toLocaleString()} helper="Rows processed" />
+      <MetricCard icon={FileText} label="Masked Output" value={summary.outputAvailable} helper="CSV available" />
     </div>
+  );
+}
+
+function ChatAssistant() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      text: "Hi, I’m your TDM Assistant. Ask me about detected columns, PII fields, masking rules, job status, audit summary, or Databricks scaling.",
+    },
+  ]);
+
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+
+    const userText = input.trim();
+
+    setMessages((current) => [
+      ...current,
+      {
+        role: "user",
+        text: userText,
+      },
+    ]);
+
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await axios.post("http://127.0.0.1:8000/chat", {
+        message: userText,
+      });
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: response.data.response,
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: "I could not connect to the backend assistant. Please make sure FastAPI is running.",
+        },
+      ]);
+    }
+
+    setLoading(false);
+  };
+
+  const quickQuestions = [
+    "What columns were detected?",
+    "Which columns are PII?",
+    "What masking rules are suggested?",
+    "What is the latest job status?",
+    "How can this scale with Databricks?",
+  ];
+
+  return (
+    <>
+      {isOpen && (
+        <div className="fixed bottom-24 right-6 z-50 w-[380px] max-w-[calc(100vw-2rem)] rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-slate-900 p-2 text-white">
+                <Shield className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">TDM Assistant</h2>
+                <p className="text-xs text-slate-500">Ask about data, rules, jobs, and audit</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsOpen(false)}
+              className="rounded-full px-3 py-1 text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto bg-slate-50 p-4">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                    message.role === "user"
+                      ? "bg-slate-900 text-white"
+                      : "border border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {message.text}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                  Thinking...
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 p-4">
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              {quickQuestions.map((question) => (
+                <button
+                  key={question}
+                  onClick={() => setInput(question)}
+                  className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 transition hover:bg-slate-100"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    sendMessage();
+                  }
+                }}
+                placeholder="Ask about this TDM run..."
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+              />
+
+              <Button onClick={sendMessage} disabled={loading} className="rounded-xl">
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={() => setIsOpen((current) => !current)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full bg-slate-900 px-5 py-4 text-sm font-medium text-white shadow-2xl transition hover:bg-slate-800"
+      >
+        <Shield className="h-5 w-5" />
+        {isOpen ? "Close Assistant" : "Ask TDM Assistant"}
+      </button>
+    </>
   );
 }
 
@@ -806,9 +1177,7 @@ function JobHistory() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Recent Job History</h2>
-            <p className="text-sm text-slate-500">
-              Tracks anonymization runs submitted during this backend session.
-            </p>
+            <p className="text-sm text-slate-500">Tracks anonymization runs submitted during this backend session.</p>
           </div>
 
           <Button variant="outline" className="rounded-xl" onClick={fetchHistory}>
@@ -816,14 +1185,10 @@ function JobHistory() {
           </Button>
         </div>
 
-        {loading && (
-          <p className="mt-5 text-sm text-slate-500">Loading job history...</p>
-        )}
+        {loading && <p className="mt-5 text-sm text-slate-500">Loading job history...</p>}
 
         {error && (
-          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error}
-          </div>
+          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
         )}
 
         {!loading && !error && jobs.length === 0 && (
@@ -834,10 +1199,12 @@ function JobHistory() {
 
         {!loading && !error && jobs.length > 0 && (
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Job ID</th>
+                  <th className="px-4 py-3 font-medium">Dataset</th>
+                  <th className="px-4 py-3 font-medium">Source Type</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Created At</th>
                   <th className="px-4 py-3 font-medium">Rows</th>
@@ -849,31 +1216,18 @@ function JobHistory() {
               <tbody className="divide-y divide-slate-100">
                 {jobs.map((job) => (
                   <tr key={job.job_id} className="bg-white">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-700">
-                      {job.job_id}
-                    </td>
-
+                    <td className="px-4 py-3 font-mono text-xs text-slate-700">{job.job_id}</td>
+                    <td className="px-4 py-3 text-slate-700">{job.dataset_name || "N/A"}</td>
+                    <td className="px-4 py-3 text-slate-700">{job.source_type || "N/A"}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
                         {job.status}
                       </span>
                     </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {new Date(job.created_at).toLocaleString()}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-900">
-                      {job.rows_processed?.toLocaleString()}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-900">
-                      {job.columns_masked}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {job.execution_mode}
-                    </td>
+                    <td className="px-4 py-3 text-slate-600">{new Date(job.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-slate-900">{job.rows_processed?.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-slate-900">{job.columns_masked}</td>
+                    <td className="px-4 py-3 text-slate-600">{job.execution_mode}</td>
                   </tr>
                 ))}
               </tbody>
@@ -889,104 +1243,136 @@ export default function App() {
   const [activeStep, setActiveStep] = useState(1);
   const [currentJobId, setCurrentJobId] = useState(null);
   const [maskingRules, setMaskingRules] = useState({});
+  const [selectedDatasetId, setSelectedDatasetId] = useState(null);
+  const [detectedColumns, setDetectedColumns] = useState(sampleColumns);
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="rounded-3xl bg-white p-6 shadow-sm md:p-8"
-        >
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="rounded-3xl bg-slate-900 p-4 text-white">
-                <Shield className="h-8 w-8" />
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="grid gap-6 p-4 lg:grid-cols-[320px_1fr] lg:p-6">
+        <SideMenu activeStep={activeStep} />
+
+        <main className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="rounded-3xl bg-white p-6 shadow-sm md:p-8"
+          >
+            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="rounded-3xl bg-slate-900 p-4 text-white">
+                  <Shield className="h-8 w-8" />
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
+                    TDM Modernization MVP
+                  </p>
+
+                  <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 md:text-4xl">
+                    Data Anonymization Control Center
+                  </h1>
+
+                  <p className="mt-2 max-w-3xl text-sm text-slate-500 md:text-base">
+                    Demo interface for extraction, test data generation, schema detection,
+                    configurable anonymization, audit review, job history, and assistant support.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-                  TDM Modernization MVP
-                </p>
-
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 md:text-4xl">
-                  Data Anonymization Control Center
-                </h1>
-
-                <p className="mt-2 max-w-3xl text-sm text-slate-500 md:text-base">
-                  Demo interface for configuring masking rules, triggering backend anonymization
-                  jobs, and reviewing audit-ready masked outputs.
-                </p>
+              <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                MVP Demo Mode
               </div>
             </div>
+          </motion.div>
 
-            <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-              MVP Demo Mode
+          <DashboardSummary />
+
+          <WorkflowProgress activeStep={activeStep} />
+
+          <Stepper activeStep={activeStep} />
+
+          <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Demo Navigation</p>
+              <p className="text-xs text-slate-500">
+                Move between steps or reset the MVP flow for a clean client walkthrough.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                disabled={activeStep === 1}
+                onClick={() => setActiveStep((step) => Math.max(1, step - 1))}
+              >
+                Back
+              </Button>
+
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => {
+                  setActiveStep(1);
+                  setCurrentJobId(null);
+                  setSelectedDatasetId(null);
+                  setDetectedColumns(sampleColumns);
+                  setMaskingRules({});
+                }}
+              >
+                Reset Demo
+              </Button>
             </div>
           </div>
-        </motion.div>
 
-        <DashboardSummary />
+          <motion.div
+            key={activeStep}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {activeStep === 1 && (
+              <SourceStep
+                onDatasetUploaded={({ datasetId, columns }) => {
+                  setSelectedDatasetId(datasetId);
+                  setDetectedColumns(columns);
 
-        <Stepper activeStep={activeStep} />
-        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-900">Demo Navigation</p>
-            <p className="text-xs text-slate-500">
-              Move between steps or reset the MVP flow for a clean client walkthrough.
-            </p>
-          </div>
+                  const selectedRules = {};
+                  columns.forEach((col) => {
+                    selectedRules[col.name] = col.rule || "No Masking";
+                  });
 
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              className="rounded-xl"
-              disabled={activeStep === 1}
-              onClick={() => setActiveStep((step) => Math.max(1, step - 1))}
-            >
-              Back
-            </Button>
+                  setMaskingRules(selectedRules);
+                }}
+                onNext={() => setActiveStep(2)}
+              />
+            )}
 
-            <Button
-              variant="outline"
-              className="rounded-xl"
-              onClick={() => {
-                setActiveStep(1);
-                setCurrentJobId(null);
-              }}
-            >
-              Reset Demo
-            </Button>
-          </div>
-        </div>
-        <motion.div
-          key={activeStep}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {activeStep === 1 && <SourceStep onNext={() => setActiveStep(2)} />}
+            {activeStep === 2 && (
+              <RulesStep
+                detectedColumns={detectedColumns}
+                onRulesChange={(rules) => setMaskingRules(rules)}
+                onNext={() => setActiveStep(3)}
+              />
+            )}
 
-          {activeStep === 2 && (
-            <RulesStep
-              onRulesChange={(rules) => setMaskingRules(rules)}
-              onNext={() => setActiveStep(3)}
-            />
-          )}
+            {activeStep === 3 && (
+              <RunStep
+                datasetId={selectedDatasetId}
+                maskingRules={maskingRules}
+                onJobCreated={(jobId) => setCurrentJobId(jobId)}
+                onNext={() => setActiveStep(4)}
+              />
+            )}
 
-          {activeStep === 3 && (
-            <RunStep
-              maskingRules={maskingRules}
-              onJobCreated={(jobId) => setCurrentJobId(jobId)}
-              onNext={() => setActiveStep(4)}
-            />
-          )}
+            {activeStep === 4 && <ReviewStep jobId={currentJobId} />}
+          </motion.div>
 
-          {activeStep === 4 && <ReviewStep jobId={currentJobId} />}
-        </motion.div>
+          <ChatAssistant />
 
-        <JobHistory />
+          <JobHistory />
+        </main>
       </div>
     </div>
   );

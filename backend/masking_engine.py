@@ -12,6 +12,7 @@ fake = Faker()
 def hash_value(value):
     if pd.isna(value):
         return value
+
     return hashlib.sha256(str(value).encode()).hexdigest()[:8]
 
 
@@ -27,24 +28,6 @@ def partial_mask(value):
     return value[:2] + "*" * (len(value) - 4) + value[-2:]
 
 
-def mask_phone(value):
-    if pd.isna(value):
-        return value
-    return fake.phone_number()
-
-
-def fake_email(value):
-    if pd.isna(value):
-        return value
-    return fake.email()
-
-
-def fake_name(value):
-    if pd.isna(value):
-        return value
-    return fake.name()
-
-
 def shift_date(value):
     if pd.isna(value):
         return value
@@ -58,36 +41,60 @@ def shift_date(value):
         return value
 
 
+def fake_value(value):
+    if pd.isna(value):
+        return value
+
+    value = str(value)
+
+    # Email-like values
+    if "@" in value:
+        return fake.email()
+
+    # SSN-like values
+    if len(value.replace("-", "")) == 9 and value.replace("-", "").isdigit():
+        return fake.ssn()
+
+    # Phone-like values
+    if value.replace("-", "").replace(" ", "").replace("(", "").replace(")", "").isdigit():
+        return fake.phone_number()
+
+    # Date-like values should be handled by Date Shift, but fallback safely
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return shift_date(value)
+    except Exception:
+        pass
+
+    # Default fake value
+    return fake.name()
+
+
 def apply_rule(value, rule):
     if rule == "Hash":
         return hash_value(value)
 
-    if rule == "Fake Name":
-        return fake_name(value)
+    if rule == "Fake Value":
+        return fake_value(value)
 
-    if rule == "Fake Email":
-        return fake_email(value)
-
-    if rule == "Fake Phone":
-        return mask_phone(value)
+    if rule == "Partial Masking":
+        return partial_mask(value)
 
     if rule == "Date Shift":
         return shift_date(value)
-
-    if rule == "Partial Mask":
-        return partial_mask(value)
 
     return value
 
 
 def apply_masking_rules(df, masking_rules):
     masked_df = df.copy()
-
     applied_rules = {}
 
     for column_name, rule in masking_rules.items():
         if column_name in masked_df.columns and rule != "No Masking":
-            masked_df[column_name] = masked_df[column_name].apply(lambda value: apply_rule(value, rule))
+            masked_df[column_name] = masked_df[column_name].apply(
+                lambda value: apply_rule(value, rule)
+            )
             applied_rules[column_name] = rule
 
     return masked_df, applied_rules
