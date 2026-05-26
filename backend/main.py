@@ -34,6 +34,9 @@ os.makedirs(GENERATED_DIR, exist_ok=True)
 jobs = {}
 datasets = {}
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class RunJobRequest(BaseModel):
     dataset_id: str
@@ -45,8 +48,7 @@ class GenerateTestDataRequest(BaseModel):
     row_count: int
 
 
-class ChatRequest(BaseModel):
-    message: str
+
 
 
 def suggest_rule_for_column(column_name):
@@ -101,11 +103,13 @@ def detect_columns_from_csv(file_path):
         suggested_rule = suggest_rule_for_column(column)
 
         detected_columns.append({
-            "name": column,
-            "type": str(df_preview[column].dtype),
-            "pii": suggested_rule != "No Masking",
-            "rule": suggested_rule,
-        })
+        "name": column,
+        "type": str(df_preview[column].dtype),
+        "pii": suggested_rule != "No Masking",
+        "ai_suggested_rule": suggested_rule,
+        "rule": suggested_rule,
+        "override_allowed": True,
+    })
 
     return detected_columns
 
@@ -118,7 +122,67 @@ def health_check():
         "mode": "multi-dataset-test-data-generation-chatbot",
     }
 
+DEMO_USERS = {
+    "admin@tdm.com": {
+        "password": "Admin@123",
+        "name": "TDM Admin",
+        "role": "admin",
+        "permissions": [
+            "dashboard",
+            "data_inventory",
+            "source_connections",
+            "data_classification",
+            "masking_rules",
+            "subsetting_rules",
+            "create_pipeline",
+            "existing_pipelines",
+            "job_monitor",
+            "data_preview",
+            "user_access",
+            "configuration",
+            "help",
+        ],
+    },
+    "developer@tdm.com": {
+        "password": "Dev@123",
+        "name": "TDM Developer",
+        "role": "developer",
+        "permissions": [
+            "dashboard",
+            "data_inventory",
+            "data_classification",
+            "masking_rules",
+            "create_pipeline",
+            "job_monitor",
+            "data_preview",
+            "help",
+        ],
+    },
+}
 
+
+@app.post("/auth/login")
+def login(request: LoginRequest):
+    user = DEMO_USERS.get(request.email)
+
+    if not user or user["password"] != request.password:
+        return {
+            "status": "FAILED",
+            "message": "Invalid email or password.",
+        }
+
+    return {
+        "status": "SUCCESS",
+        "message": "Login successful.",
+        "user": {
+            "email": request.email,
+            "name": user["name"],
+            "role": user["role"],
+            "permissions": user["permissions"],
+        },
+    }
+
+    
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename.endswith(".csv"):
@@ -379,136 +443,3 @@ def download_masked_output(job_id: str):
     )
 
 
-@app.post("/chat")
-def chat_with_assistant(request: ChatRequest):
-    user_message = request.message.lower().strip()
-
-    if len(datasets) == 0 and len(jobs) == 0:
-        return {
-            "response": "No datasets or jobs are available yet. Please upload a CSV file or generate test data first."
-        }
-
-    latest_dataset = None
-    latest_job = None
-
-    if datasets:
-        latest_dataset = sorted(
-            datasets.values(),
-            key=lambda dataset: dataset["uploaded_at"],
-            reverse=True
-        )[0]
-
-    if jobs:
-        latest_job = sorted(
-            jobs.values(),
-            key=lambda job: job["created_at"],
-            reverse=True
-        )[0]
-
-    if "column" in user_message or "schema" in user_message:
-        if not latest_dataset:
-            return {
-                "response": "No dataset is available yet. Upload or generate a dataset first."
-            }
-
-        columns = latest_dataset.get("columns", [])
-        column_summary = ", ".join([column["name"] for column in columns])
-
-        return {
-            "response": f"The latest dataset is {latest_dataset['filename']}. Detected columns are: {column_summary}."
-        }
-
-    if "pii" in user_message or "sensitive" in user_message:
-        if not latest_dataset:
-            return {
-                "response": "No dataset is available yet. Upload or generate a dataset first."
-            }
-
-        pii_columns = [
-            column["name"]
-            for column in latest_dataset.get("columns", [])
-            if column.get("pii")
-        ]
-
-        if not pii_columns:
-            return {
-                "response": "I did not detect any PII columns in the latest dataset using the current rule-based detection."
-            }
-
-        return {
-            "response": f"The detected PII columns are: {', '.join(pii_columns)}."
-        }
-
-    if "rule" in user_message or "mask" in user_message:
-        if not latest_dataset:
-            return {
-                "response": "No dataset is available yet. Upload or generate a dataset first."
-            }
-
-        rules = [
-            f"{column['name']} → {column.get('rule', 'No Masking')}"
-            for column in latest_dataset.get("columns", [])
-        ]
-
-        return {
-            "response": "Suggested masking rules are: " + "; ".join(rules)
-        }
-
-    if "job" in user_message or "status" in user_message or "run" in user_message:
-        if not latest_job:
-            return {
-                "response": "No anonymization job has been run yet."
-            }
-
-        return {
-            "response": (
-                f"The latest job status is {latest_job['status']}. "
-                f"It processed {latest_job['rows_processed']} rows, masked "
-                f"{latest_job['columns_masked']} columns, and used {latest_job['execution_mode']}."
-            )
-        }
-
-    if "audit" in user_message:
-        if not latest_job:
-            return {
-                "response": "No audit summary is available yet because no job has been run."
-            }
-
-        audit = latest_job.get("audit", {})
-
-        return {
-            "response": (
-                f"Audit summary: {audit.get('total_rows_processed', 0)} rows processed, "
-                f"{audit.get('pii_columns_masked', 0)} columns masked, "
-                f"rules applied: {', '.join(audit.get('rules_applied', []))}."
-            )
-        }
-
-    if "download" in user_message or "output" in user_message:
-        if not latest_job:
-            return {
-                "response": "No masked output is available yet. Please run an anonymization job first."
-            }
-
-        return {
-            "response": (
-                "The masked output is available after the job completes. "
-                "Go to the Review step and click Download Masked CSV."
-            )
-        }
-
-    if "databricks" in user_message or "spark" in user_message or "scale" in user_message:
-        return {
-            "response": (
-                "This MVP currently uses a local Pandas masking engine. "
-                "For enterprise scale, the FastAPI backend can be upgraded to trigger Databricks Jobs "
-                "and run the anonymization logic using PySpark on scalable clusters."
-            )
-        }
-
-    return {
-        "response": (
-            "I can help with dataset columns, PII detection, masking rules, job status, audit summary, "
-            "download output, and future Databricks/Spark scaling. Try asking: 'What PII columns were detected?'"
-        )
-    }
