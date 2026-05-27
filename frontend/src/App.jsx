@@ -151,7 +151,6 @@ function LoginPage({ onLogin }) {
       });
 
       if (response.data.status === "SUCCESS") {
-        localStorage.setItem("tdm_user", JSON.stringify(response.data.user));
         onLogin(response.data.user);
       } else {
         setError(response.data.message || "Login failed.");
@@ -289,12 +288,24 @@ function EnterpriseSideMenu({
   const permissions = currentUser?.permissions || [];
 
   const [openGroups, setOpenGroups] = useState({
-    Main: true,
+    Main: false,
     Configure: false,
-    Execute: true,
+    Execute: false,
     Admin: false,
     Help: false,
   });
+
+  useEffect(() => {
+  if (isMenuCollapsed) {
+    setOpenGroups({
+      Main: false,
+      Configure: false,
+      Execute: false,
+      Admin: false,
+      Help: false,
+    });
+  }
+}, [isMenuCollapsed]);
 
   const toggleGroup = (groupName) => {
     setOpenGroups((current) => ({
@@ -1106,30 +1117,78 @@ function SourceStep({ onNext, onDatasetUploaded }) {
 }
 
 
-function RulesStep({ onNext, onRulesChange, detectedColumns }) {
+function RulesStep({ currentUser, onNext, onRulesChange, detectedColumns }) {
+  const isDeveloper = currentUser?.role === "developer";
+
+  const [adminLockedRules, setAdminLockedRules] = useState({});
+
+useEffect(() => {
+  const fetchAdminLockedRules = async () => {
+    try {
+      const response = await axios.get("http://127.0.0.1:8000/admin-locked-rules");
+
+      const rulesMap = {};
+
+      (response.data.rules || []).forEach((rule) => {
+        if (rule.enabled) {
+          rulesMap[rule.column.toLowerCase()] = {
+            rule: rule.rule,
+            lockedBy: rule.locked_by,
+            reason: rule.reason,
+            developerCanOverride: rule.developer_can_override,
+          };
+        }
+      });
+
+      setAdminLockedRules(rulesMap);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  fetchAdminLockedRules();
+}, []);
+
   const safeDetectedColumns =
     Array.isArray(detectedColumns) && detectedColumns.length > 0
       ? detectedColumns
       : sampleColumns;
 
   const normalizeColumns = (columns) =>
-    columns.map((col) => ({
-      ...col,
-      ai_suggested_rule: col.ai_suggested_rule || col.rule || "No Masking",
-      rule: col.rule || col.ai_suggested_rule || "No Masking",
-      override_allowed: col.override_allowed !== false,
-    }));
+    columns.map((col) => {
+      const lockedRule = adminLockedRules[col.name?.toLowerCase()];
+
+      if (isDeveloper && lockedRule && !lockedRule.developerCanOverride) {
+        return {
+          ...col,
+          ai_suggested_rule: col.ai_suggested_rule || lockedRule.rule,
+          rule: lockedRule.rule,
+          override_allowed: false,
+          admin_locked: true,
+          locked_reason: lockedRule.reason,
+          locked_by: lockedRule.lockedBy,
+        };
+      }
+
+      return {
+        ...col,
+        ai_suggested_rule: col.ai_suggested_rule || col.rule || "No Masking",
+        rule: col.rule || col.ai_suggested_rule || "No Masking",
+        override_allowed: col.override_allowed !== false,
+        admin_locked: false,
+      };
+    });
 
   const [columns, setColumns] = useState(normalizeColumns(safeDetectedColumns));
 
-  useEffect(() => {
-    const safeColumns =
-      Array.isArray(detectedColumns) && detectedColumns.length > 0
-        ? detectedColumns
-        : sampleColumns;
+ useEffect(() => {
+  const safeColumns =
+    Array.isArray(detectedColumns) && detectedColumns.length > 0
+      ? detectedColumns
+      : sampleColumns;
 
-    setColumns(normalizeColumns(safeColumns));
-  }, [detectedColumns]);
+  setColumns(normalizeColumns(safeColumns));
+}, [detectedColumns, currentUser, adminLockedRules]);
 
   useEffect(() => {
     const selectedRules = {};
@@ -1142,9 +1201,15 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
   }, [columns, onRulesChange]);
 
   const updateRule = (name, rule) => {
-    const updatedColumns = columns.map((col) =>
-      col.name === name ? { ...col, rule } : col
-    );
+    const updatedColumns = columns.map((col) => {
+      if (col.name !== name) return col;
+
+      if (isDeveloper && col.admin_locked) {
+        return col;
+      }
+
+      return { ...col, rule };
+    });
 
     setColumns(updatedColumns);
 
@@ -1157,10 +1222,16 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
   };
 
   const resetToAiSuggestions = () => {
-    const resetColumns = columns.map((col) => ({
-      ...col,
-      rule: col.ai_suggested_rule || "No Masking",
-    }));
+    const resetColumns = columns.map((col) => {
+      if (isDeveloper && col.admin_locked) {
+        return col;
+      }
+
+      return {
+        ...col,
+        rule: col.ai_suggested_rule || "No Masking",
+      };
+    });
 
     setColumns(resetColumns);
 
@@ -1176,6 +1247,7 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
   const overriddenCount = columns.filter(
     (col) => col.rule !== col.ai_suggested_rule
   ).length;
+  const adminLockedCount = columns.filter((col) => col.admin_locked).length;
 
   return (
     <Card className="rounded-2xl shadow-sm">
@@ -1186,7 +1258,7 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
               AI-Assisted Masking Rule Assignment
             </h2>
             <p className="text-sm text-slate-500">
-              AI suggests masking rules from detected schema. Users can override before execution.
+              AI suggests masking rules first. Admin-locked rules cannot be overridden by developers.
             </p>
           </div>
 
@@ -1195,12 +1267,12 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
           </Button>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-5">
           <MetricCard
             icon={Tags}
             label="Detected Columns"
             value={columns.length}
-            helper="From uploaded/generated dataset"
+            helper="From selected dataset"
           />
 
           <MetricCard
@@ -1214,12 +1286,19 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
             icon={SlidersHorizontal}
             label="User Overrides"
             value={overriddenCount}
-            helper="Rules changed from AI suggestion"
+            helper="Changed from AI suggestion"
+          />
+
+          <MetricCard
+            icon={Lock}
+            label="Admin Locked"
+            value={adminLockedCount}
+            helper="Developer cannot override"
           />
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[1050px] text-left text-sm">
+          <table className="w-full min-w-[1150px] text-left text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Column</th>
@@ -1228,6 +1307,7 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
                 <th className="px-4 py-3 font-medium">AI Suggested Rule</th>
                 <th className="px-4 py-3 font-medium">Final Rule / Override</th>
                 <th className="px-4 py-3 font-medium">Override Status</th>
+                <th className="px-4 py-3 font-medium">Lock Reason</th>
               </tr>
             </thead>
 
@@ -1266,8 +1346,13 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
                     <td className="px-4 py-3">
                       <select
                         value={col.rule || "No Masking"}
+                        disabled={isDeveloper && col.admin_locked}
                         onChange={(e) => updateRule(col.name, e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+                        className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ${
+                          isDeveloper && col.admin_locked
+                            ? "cursor-not-allowed bg-slate-100 text-slate-500"
+                            : "bg-white"
+                        }`}
                       >
                         <option>No Masking</option>
                         <option>Fake Value</option>
@@ -1278,7 +1363,12 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
                     </td>
 
                     <td className="px-4 py-3">
-                      {isOverridden ? (
+                      {col.admin_locked ? (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                          <Lock className="mr-1 h-3 w-3" />
+                          Admin Locked
+                        </span>
+                      ) : isOverridden ? (
                         <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                           User Overridden
                         </span>
@@ -1288,6 +1378,12 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
                         </span>
                       )}
                     </td>
+
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {col.admin_locked
+                        ? `${col.locked_by}: ${col.locked_reason}`
+                        : "Override allowed"}
+                    </td>
                   </tr>
                 );
               })}
@@ -1296,11 +1392,9 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
         </div>
 
         <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-900">AI Suggestion Logic</p>
+          <p className="font-medium text-slate-900">Role-Based Override Logic</p>
           <p className="mt-1">
-            Current MVP uses AI-assisted rule inference from column names and schema patterns.
-            Later, this can be upgraded to use GenAI, Presidio, sample-value scanning, metadata,
-            and business glossary context.
+            Admin users can override all masking rules. Developer users cannot override admin-locked sensitive rules such as SSN partial masking. Backend also enforces locked rules during execution.
           </p>
         </div>
 
@@ -1315,7 +1409,7 @@ function RulesStep({ onNext, onRulesChange, detectedColumns }) {
   );
 }
 
-function RunStep({ onNext, onJobCreated, maskingRules, datasetId }) {
+function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId }) {
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
   const [jobId, setJobId] = useState(null);
@@ -1337,9 +1431,10 @@ function RunStep({ onNext, onJobCreated, maskingRules, datasetId }) {
       }
 
       const runResponse = await axios.post("http://127.0.0.1:8000/jobs/run", {
-        dataset_id: datasetId,
-        masking_rules: maskingRules,
-      });
+      dataset_id: datasetId,
+      masking_rules: maskingRules,
+      user_role: currentUser?.role || "developer",
+    });
 
       if (runResponse.data.status === "FAILED") {
         setRunning(false);
@@ -1430,25 +1525,68 @@ function RunStep({ onNext, onJobCreated, maskingRules, datasetId }) {
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <MetricCard
-              icon={Database}
-              label="Rows Processed"
-              value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "Pending"}
-              helper={jobDetails?.dataset_name || "Selected dataset"}
-            />
-            <MetricCard
-              icon={Lock}
-              label="Columns Masked"
-              value={jobDetails ? jobDetails.columns_masked : "Pending"}
-              helper="PII fields protected"
-            />
-            <MetricCard
-              icon={Activity}
-              label="Execution Mode"
-              value={jobDetails ? "API" : "Ready"}
-              helper={jobDetails ? jobDetails.execution_mode : "Waiting to submit"}
-            />
-          </div>
+  <MetricCard
+    icon={Database}
+    label="Rows Processed"
+    value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "Pending"}
+    helper={jobDetails?.dataset_name || "Selected dataset"}
+  />
+
+  <MetricCard
+    icon={Lock}
+    label="Columns Masked"
+    value={jobDetails ? jobDetails.columns_masked : "Pending"}
+    helper="PII fields protected"
+  />
+
+  <MetricCard
+    icon={Activity}
+    label="Execution Mode"
+    value={jobDetails ? "Databricks" : "Ready"}
+    helper={jobDetails ? jobDetails.execution_mode : "Waiting to submit"}
+  />
+
+  <MetricCard
+    icon={Clock}
+    label="Job Started At"
+    value={
+      jobDetails?.job_started_at
+        ? new Date(jobDetails.job_started_at).toLocaleTimeString()
+        : "Pending"
+    }
+    helper={
+      jobDetails?.job_started_at
+        ? new Date(jobDetails.job_started_at).toLocaleDateString()
+        : "Waiting to start"
+    }
+  />
+
+  <MetricCard
+    icon={CheckCircle2}
+    label="Job Ended At"
+    value={
+      jobDetails?.job_ended_at
+        ? new Date(jobDetails.job_ended_at).toLocaleTimeString()
+        : "Pending"
+    }
+    helper={
+      jobDetails?.job_ended_at
+        ? new Date(jobDetails.job_ended_at).toLocaleDateString()
+        : "Waiting to complete"
+    }
+  />
+
+  <MetricCard
+    icon={Activity}
+    label="Duration"
+    value={
+      jobDetails?.duration_seconds !== undefined
+        ? `${jobDetails.duration_seconds}s`
+        : "Pending"
+    }
+    helper="Total execution time"
+  />
+</div>
 
           {complete && (
             <div className="mt-6 flex justify-end">
@@ -1660,6 +1798,7 @@ function ReviewStep({ jobId }) {
 }
 
 function CreatePipelinePage({
+  currentUser,
   activeStep,
   setActiveStep,
   currentJobId,
@@ -1741,6 +1880,7 @@ function CreatePipelinePage({
 
         {activeStep === 2 && (
           <RulesStep
+            currentUser={currentUser}
             detectedColumns={detectedColumns}
             onRulesChange={(rules) => setMaskingRules(rules)}
             onNext={() => setActiveStep(3)}
@@ -1749,11 +1889,12 @@ function CreatePipelinePage({
 
         {activeStep === 3 && (
           <RunStep
-            datasetId={selectedDatasetId}
-            maskingRules={maskingRules}
-            onJobCreated={(jobId) => setCurrentJobId(jobId)}
-            onNext={() => setActiveStep(4)}
-          />
+          currentUser={currentUser}
+          datasetId={selectedDatasetId}
+          maskingRules={maskingRules}
+          onJobCreated={(jobId) => setCurrentJobId(jobId)}
+          onNext={() => setActiveStep(4)}
+        />
         )}
 
         {activeStep === 4 && <ReviewStep jobId={currentJobId} />}
@@ -2120,7 +2261,8 @@ function DataClassificationPage() {
 }
 
 
-function MaskingRulesPage() {
+function MaskingRulesPage({ currentUser }) {
+  const isAdmin = currentUser?.role === "admin";
   const globalRules = [
     {
       name: "Default Email Masking",
@@ -2166,14 +2308,6 @@ function MaskingRulesPage() {
       tag: "PII",
     },
     {
-      table: "employee_data",
-      column: "ssn",
-      classification: "Highly Sensitive Identifier",
-      rule: "Partial Masking",
-      override: "Restricted",
-      tag: "CONFIDENTIAL",
-    },
-    {
       table: "account_master",
       column: "account_id",
       classification: "Business Identifier",
@@ -2187,8 +2321,8 @@ function MaskingRulesPage() {
     {
       name: "US SSN Conditional Mask",
       condition: "If country = US and column = ssn",
-      action: "Partial Masking",
-      example: "123-45-6789 → 12*****89",
+      action: "Admin Locked Rule",
+      example: "Admin-selected rule will be enforced for developers",
     },
     {
       name: "Minor DOB Protection",
@@ -2210,11 +2344,156 @@ function MaskingRulesPage() {
     },
   ];
 
+  const fetchDatasetsForColumns = async () => {
+  try {
+    const response = await axios.get("http://127.0.0.1:8000/datasets");
+    const datasetList = response.data.datasets || [];
+
+    setDatasets(datasetList);
+
+    if (datasetList.length > 0 && !selectedDatasetForColumns) {
+      setSelectedDatasetForColumns(datasetList[0].dataset_id);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+  const [datasets, setDatasets] = useState([]);
+  const [selectedDatasetForColumns, setSelectedDatasetForColumns] = useState("");
+  const [lockedRules, setLockedRules] = useState([]);
+  const [selectedColumn, setSelectedColumn] = useState("ssn");
+  const [selectedRule, setSelectedRule] = useState("Partial Masking");
+  const [reason, setReason] = useState("");
+  const [developerCanOverride, setDeveloperCanOverride] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
+  const [loadingRules, setLoadingRules] = useState(false);
+
+  const fetchLockedRules = async () => {
+    try {
+      setLoadingRules(true);
+
+      const response = await axios.get("http://127.0.0.1:8000/admin-locked-rules");
+      const rules = response.data.rules || [];
+
+      setLockedRules(rules);
+
+      const ssnRule = rules.find((rule) => rule.column === "ssn");
+
+      if (ssnRule) {
+      setSelectedColumn(ssnRule.column);
+      setSelectedRule(ssnRule.rule);
+      setReason("");
+      setDeveloperCanOverride(Boolean(ssnRule.developer_can_override));
+    }
+
+      setLoadingRules(false);
+    } catch (err) {
+      console.error(err);
+      setLoadingRules(false);
+      setSaveMessage("Unable to load admin locked rules. Make sure backend is running.");
+    }
+  };
+
+  useEffect(() => {
+  fetchLockedRules();
+  fetchDatasetsForColumns();
+}, []);
+
+const selectedDatasetObject = datasets.find(
+  (dataset) => dataset.dataset_id === selectedDatasetForColumns
+);
+
+const availableColumns = selectedDatasetObject?.columns || [];
+
+const deleteLockedRule = async (columnName) => {
+  if (!isAdmin) {
+    setSaveMessage("Only Admin users can delete locked rules.");
+    return;
+  }
+
+  try {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete the locked rule for "${columnName}"?`
+    );
+
+    if (!confirmDelete) return;
+
+    const response = await axios.delete(
+      `http://127.0.0.1:8000/admin-locked-rules/${columnName}`,
+      {
+        params: {
+          user_role: currentUser?.role || "developer",
+        },
+      }
+    );
+
+    if (response.data.status === "SUCCESS") {
+      setLockedRules(response.data.rules || []);
+      setSaveMessage(`Locked rule for "${columnName}" deleted successfully.`);
+
+      if (selectedColumn === columnName) {
+        setSelectedColumn("");
+        setSelectedRule("Partial Masking");
+        setReason("");
+        setDeveloperCanOverride(false);
+      }
+    } else {
+      setSaveMessage(response.data.message || "Unable to delete locked rule.");
+    }
+  } catch (err) {
+    console.error(err);
+    setSaveMessage("Unable to delete locked rule. Make sure backend is running.");
+  }
+};
+
+  const saveLockedRule = async () => {
+  try {
+    setSaveMessage(null);
+
+    if (!isAdmin) {
+      setSaveMessage("Only Admin users can create or update locked rules.");
+      return;
+    }
+
+    if (!selectedColumn.trim()) {
+      setSaveMessage("Please select a column before saving the locked rule.");
+      return;
+    }
+
+    if (!reason.trim()) {
+      setSaveMessage("Please enter a reason before saving the locked rule.");
+      return;
+    }
+
+    const response = await axios.put("http://127.0.0.1:8000/admin-locked-rules", {
+      column: selectedColumn.trim().toLowerCase(),
+      rule: selectedRule,
+      reason,
+      developer_can_override: developerCanOverride,
+      enabled: true,
+      user_role: currentUser?.role || "developer",
+    });
+
+    if (response.data.status === "SUCCESS") {
+      setLockedRules(response.data.rules || []);
+      setSaveMessage("Admin locked rule saved successfully.");
+    } else {
+      setSaveMessage(response.data.message || "Unable to save locked rule.");
+    }
+  } catch (err) {
+    console.error(err);
+    setSaveMessage("Unable to save locked rule. Make sure backend is running.");
+  }
+};
+
+  const activeLockedRules = lockedRules.filter((rule) => rule.enabled);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Masking Rules"
-        description="Manage global, table-level, column-level, and conditional masking rules used during anonymization."
+        description="Manage global, table-level, column-level, conditional, and admin-locked masking rules used during anonymization."
         icon={SlidersHorizontal}
       />
 
@@ -2228,7 +2507,7 @@ function MaskingRulesPage() {
         <MetricCard
           icon={TableProperties}
           label="Table Rules"
-          value={tableRules.length}
+          value={tableRules.length + activeLockedRules.length}
           helper="Dataset-specific"
         />
         <MetricCard
@@ -2238,12 +2517,247 @@ function MaskingRulesPage() {
           helper="Business logic"
         />
         <MetricCard
-          icon={CheckCircle2}
-          label="Active Rules"
-          value={globalRules.length + tableRules.length + conditionalRules.length}
-          helper="Available in MVP"
+          icon={Lock}
+          label="Admin Locked"
+          value={activeLockedRules.length}
+          helper="Developer restricted"
         />
       </div>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Admin Locked Rule Configuration
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                Admin can define masking rules that Developers cannot override during pipeline execution.
+              </p>
+
+              {!isAdmin && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                  You are logged in as Developer. Locked rules are view-only and can only be changed by Admin.
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="rounded-xl" onClick={fetchLockedRules}>
+                Refresh
+              </Button>
+
+              {isAdmin && (
+                <Button onClick={saveLockedRule} className="rounded-xl">
+                  Save Locked Rule
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <div>
+  <label className="text-sm font-medium text-slate-700">
+    Dataset
+  </label>
+
+  <select
+  disabled={!isAdmin}
+  value={selectedColumn}
+  onChange={(event) => setSelectedColumn(event.target.value)}
+  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+>
+    <option value="">Select dataset</option>
+
+    {datasets.map((dataset) => (
+      <option key={dataset.dataset_id} value={dataset.dataset_id}>
+        {dataset.filename}
+      </option>
+    ))}
+  </select>
+</div>
+
+<div>
+  <label className="text-sm font-medium text-slate-700">
+    Column to Lock
+  </label>
+
+  <select
+    value={selectedColumn}
+    onChange={(event) => setSelectedColumn(event.target.value)}
+    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+  >
+    <option value="">Select column</option>
+
+    {availableColumns.map((column) => (
+      <option key={column.name} value={column.name}>
+        {column.name}
+      </option>
+    ))}
+  </select>
+</div>
+
+            <div>
+              <label className="text-sm font-medium text-slate-700">Locked Rule</label>
+              <select
+                disabled={!isAdmin}
+                value={selectedRule}
+                onChange={(event) => setSelectedRule(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+              >
+                <option>No Masking</option>
+                <option>Fake Value</option>
+                <option>Partial Masking</option>
+                <option>Date Shift</option>
+                <option>Hash</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Developer Override
+              </label>
+
+              <select
+                disabled={!isAdmin}
+                value={developerCanOverride ? "Allowed" : "Not Allowed"}
+                onChange={(event) =>
+                  setDeveloperCanOverride(event.target.value === "Allowed")
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              >
+                <option>Not Allowed</option>
+                <option>Allowed</option>
+              </select>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-medium text-slate-900">Persistence</p>
+              <p className="mt-2 text-xs text-slate-500">
+                Saved to backend JSON and reused after restart.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="text-sm font-medium text-slate-700">Reason</label>
+            <textarea
+              disabled={!isAdmin}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              rows="3"
+              placeholder="Enter why this rule should be locked for developers"
+            />
+          </div>
+
+          {saveMessage && (
+            <div
+              className={`mt-4 rounded-xl p-3 text-sm ${
+                saveMessage.includes("successfully")
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {saveMessage}
+            </div>
+          )}
+
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[1100px] text-left text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Column</th>
+                  <th className="px-4 py-3 font-medium">Locked Rule</th>
+                  <th className="px-4 py-3 font-medium">Developer Override</th>
+                  <th className="px-4 py-3 font-medium">Locked By</th>
+                  <th className="px-4 py-3 font-medium">Reason</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Action</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {loadingRules && (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-4 text-slate-500">
+                      Loading locked rules...
+                    </td>
+                  </tr>
+                )}
+
+                {!loadingRules && lockedRules.length === 0 && (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-4 text-slate-500">
+                      No admin locked rules found.
+                    </td>
+                  </tr>
+                )}
+
+                {!loadingRules &&
+                  lockedRules.map((rule) => (
+                    <tr key={rule.column} className="bg-white">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {rule.column}
+                      </td>
+
+                      <td className="px-4 py-3 min-w-[160px]">
+                        <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                          {rule.rule}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {rule.developer_can_override ? (
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                            Allowed
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                            Not Allowed
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-700">
+                        {rule.locked_by || "TDM Admin"}
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-600">
+                        {rule.reason}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                            rule.enabled
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {rule.enabled ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {isAdmin ? (
+                          <button
+                            onClick={() => deleteLockedRule(rule.column)}
+                            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100"
+                          >
+                            Delete
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">View only</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
@@ -2302,7 +2816,9 @@ function MaskingRulesPage() {
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Table / Column Rule Assignment</h2>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Table / Column Rule Assignment
+              </h2>
               <p className="text-sm text-slate-500">
                 Rule assignment structure aligned with classification, override, and tags.
               </p>
@@ -2351,6 +2867,35 @@ function MaskingRulesPage() {
                     <td className="px-4 py-3">
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                         {rule.tag}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+
+                {lockedRules.map((rule) => (
+                  <tr key={`locked-${rule.column}`} className="bg-white">
+                    <td className="px-4 py-3 text-slate-700">All Tables</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{rule.column}</td>
+                    <td className="px-4 py-3 text-slate-700">Admin Locked Sensitive Field</td>
+                    <td className="px-4 py-3 min-w-[160px]">
+                      <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-red-600 px-3 py-1 text-xs font-medium text-white">
+                        {rule.rule}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {rule.developer_can_override ? (
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                          Allowed
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                          Restricted
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                        CONFIDENTIAL
                       </span>
                     </td>
                   </tr>
@@ -2409,7 +2954,8 @@ function MaskingRulesPage() {
           <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
             <p className="font-medium text-slate-900">MVP Note</p>
             <p className="mt-1">
-              These conditional rules are currently represented in the UI only. The next backend upgrade can store rule definitions and apply them during anonymization.
+              Admin locked rules are now stored by the backend and reused across sessions.
+              Conditional rules are still UI examples and can be connected to backend execution later.
             </p>
           </div>
         </CardContent>
@@ -2420,32 +2966,93 @@ function MaskingRulesPage() {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
-    const storedUser = localStorage.getItem("tdm_user");
-    return storedUser ? JSON.parse(storedUser) : null;
-  });
+  const storedUser = sessionStorage.getItem("tdm_user");
+  return storedUser ? JSON.parse(storedUser) : null;
+});
 
   const [activePage, setActivePage] = useState("dashboard");
-  const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
+  const [isMenuCollapsed, setIsMenuCollapsed] = useState(true);
   const [activeStep, setActiveStep] = useState(1);
   const [currentJobId, setCurrentJobId] = useState(null);
   const [maskingRules, setMaskingRules] = useState({});
   const [selectedDatasetId, setSelectedDatasetId] = useState(null);
   const [detectedColumns, setDetectedColumns] = useState(sampleColumns);
+  const [backendSessionChecked, setBackendSessionChecked] = useState(false);
+
+  useEffect(() => {
+  const checkBackendSession = async () => {
+    try {
+      const response = await axios.get("http://127.0.0.1:8000/");
+      const latestBackendSessionId = response.data.backend_session_id;
+      const storedBackendSessionId = sessionStorage.getItem("tdm_backend_session_id");
+
+      if (storedBackendSessionId && storedBackendSessionId !== latestBackendSessionId) {
+        sessionStorage.removeItem("tdm_user");
+        sessionStorage.removeItem("tdm_backend_session_id");
+        setCurrentUser(null);
+        setActivePage("dashboard");
+        setIsMenuCollapsed(true);
+      }
+
+      if (!storedBackendSessionId && latestBackendSessionId) {
+        sessionStorage.setItem("tdm_backend_session_id", latestBackendSessionId);
+      }
+
+      setBackendSessionChecked(true);
+    } catch (err) {
+      console.error(err);
+      setBackendSessionChecked(true);
+    }
+  };
+
+  checkBackendSession();
+}, []);
 
   const logout = () => {
-    localStorage.removeItem("tdm_user");
-    setCurrentUser(null);
+  sessionStorage.removeItem("tdm_user");
+  sessionStorage.removeItem("tdm_backend_session_id");
+  setCurrentUser(null);
+  setActivePage("dashboard");
+  setIsMenuCollapsed(true);
+  setActiveStep(1);
+  setCurrentJobId(null);
+  setSelectedDatasetId(null);
+  setDetectedColumns(sampleColumns);
+  setMaskingRules({});
+};
+
+const handleLoginSuccess = async (user) => {
+  try {
+    const response = await axios.get("http://127.0.0.1:8000/");
+    const latestBackendSessionId = response.data.backend_session_id;
+
+    sessionStorage.setItem("tdm_user", JSON.stringify(user));
+    sessionStorage.setItem("tdm_backend_session_id", latestBackendSessionId);
+
+    setCurrentUser(user);
     setActivePage("dashboard");
+    setIsMenuCollapsed(true);
     setActiveStep(1);
     setCurrentJobId(null);
     setSelectedDatasetId(null);
     setDetectedColumns(sampleColumns);
     setMaskingRules({});
-  };
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+if (!backendSessionChecked) {
+  return (
+    <div className="min-h-screen bg-slate-100 p-8 text-slate-700">
+      Checking backend session...
+    </div>
+  );
+}
 
   if (!currentUser) {
-    return <LoginPage onLogin={setCurrentUser} />;
-  }
+  return <LoginPage onLogin={handleLoginSuccess} />;
+}
 
   const permissions = currentUser.permissions || [];
 
@@ -2460,12 +3067,15 @@ export default function App() {
 
     if (activePage === "data_classification") return <DataClassificationPage />;
 
-    if (activePage === "masking_rules") return <MaskingRulesPage />;
+    if (activePage === "masking_rules") {
+  return <MaskingRulesPage currentUser={currentUser} />;
+}
 
     if (activePage === "create_pipeline") {
       return (
         <CreatePipelinePage
           activeStep={activeStep}
+          currentUser={currentUser}
           setActiveStep={setActiveStep}
           currentJobId={currentJobId}
           setCurrentJobId={setCurrentJobId}

@@ -114,7 +114,7 @@ def run_local_anonymization(input_path, output_path, masking_rules):
         "rules_applied": [f"{column}: {rule}" for column, rule in applied_rules.items()],
         "output_target": output_path,
         "run_status": "Success",
-        "execution_mode": "Local Pandas masking engine with dynamic rules",
+        "execution_mode": "Databricks Jobs API orchestration",
     }
 
     preview = {
