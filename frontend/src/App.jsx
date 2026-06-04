@@ -773,17 +773,24 @@ function Stepper({ activeStep }) {
   );
 }
 
-function SourceStep({ onNext, onDatasetUploaded }) {
+function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) {
   const [uploading, setUploading] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [loadingDatasets, setLoadingDatasets] = useState(false);
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [uploadMessage, setUploadMessage] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState(null);
   const [selectedDatasetIdLocal, setSelectedDatasetIdLocal] = useState("");
-  const [testTemplate, setTestTemplate] = useState("customer");
-  const [rowCount, setRowCount] = useState(100);
+
+  const [sourceDatabases, setSourceDatabases] = useState([]);
+  const [selectedSourceDatabase, setSelectedSourceDatabase] = useState("");
+  const [sourceTables, setSourceTables] = useState([]);
+  const [selectedSourceTables, setSelectedSourceTables] = useState([]);
+  const [sourceColumnsByTable, setSourceColumnsByTable] = useState({});
+  const [selectedColumnsByTable, setSelectedColumnsByTable] = useState({});
+  const [sourceRowCount, setSourceRowCount] = useState(100);
+  const [rowCountByTable, setRowCountByTable] = useState({});
+  const [sourceGenerating, setSourceGenerating] = useState(false);
 
   const fetchDatasets = async () => {
     try {
@@ -798,8 +805,45 @@ function SourceStep({ onNext, onDatasetUploaded }) {
     }
   };
 
+  const fetchSourceTables = async (database) => {
+    try {
+      const response = await axios.get(
+        "http://127.0.0.1:8000/source-metadata/databricks/tables",
+        { params: { database } }
+      );
+
+      setSourceTables(response.data.tables || []);
+      setSelectedSourceTables([]);
+      setSourceColumnsByTable({});
+      setSelectedColumnsByTable({});
+    } catch (err) {
+      console.error(err);
+      setUploadError("Unable to load tables for selected database.");
+    }
+  };
+
+  const fetchSourceDatabases = async () => {
+    try {
+      const response = await axios.get(
+        "http://127.0.0.1:8000/source-metadata/databricks/databases"
+      );
+
+      const databases = response.data.databases || [];
+      setSourceDatabases(databases);
+
+      if (databases.length > 0 && !selectedSourceDatabase) {
+        setSelectedSourceDatabase(databases[0]);
+        fetchSourceTables(databases[0]);
+      }
+    } catch (err) {
+      console.error(err);
+      setUploadError("Unable to load Databricks databases from backend.");
+    }
+  };
+
   useEffect(() => {
     fetchDatasets();
+    fetchSourceDatabases();
   }, []);
 
   const handleDatasetReady = (responseData, displayName) => {
@@ -808,6 +852,7 @@ function SourceStep({ onNext, onDatasetUploaded }) {
 
     onDatasetUploaded({
       datasetId: responseData.dataset_id,
+      filename: displayName,
       columns: Array.isArray(responseData.columns) ? responseData.columns : sampleColumns,
     });
 
@@ -832,6 +877,7 @@ function SourceStep({ onNext, onDatasetUploaded }) {
 
     onDatasetUploaded({
       datasetId: selectedDataset.dataset_id,
+      filename: selectedDataset.filename,
       columns: Array.isArray(selectedDataset.columns)
         ? selectedDataset.columns
         : sampleColumns,
@@ -879,32 +925,143 @@ function SourceStep({ onNext, onDatasetUploaded }) {
     }
   };
 
-  const handleGenerateTestData = async () => {
+  const fetchColumnsForTable = async (database, tableName) => {
     try {
-      setGenerating(true);
+      const response = await axios.get(
+        "http://127.0.0.1:8000/source-metadata/databricks/columns",
+        {
+          params: {
+            database,
+            table: tableName,
+          },
+        }
+      );
+
+      const columns = response.data.columns || [];
+
+      setSourceColumnsByTable((current) => ({
+        ...current,
+        [tableName]: columns,
+      }));
+
+      setSelectedColumnsByTable((current) => ({
+        ...current,
+        [tableName]: columns.map((column) => column.name),
+      }));
+    } catch (err) {
+      console.error(err);
+      setUploadError(`Unable to load columns for table ${tableName}.`);
+    }
+  };
+
+  const toggleSourceTable = async (tableName) => {
+  const alreadySelected = selectedSourceTables.includes(tableName);
+
+  if (alreadySelected) {
+    setSelectedSourceTables((current) =>
+      current.filter((table) => table !== tableName)
+    );
+
+    setSelectedColumnsByTable((current) => {
+      const updated = { ...current };
+      delete updated[tableName];
+      return updated;
+    });
+
+    setRowCountByTable((current) => {
+      const updated = { ...current };
+      delete updated[tableName];
+      return updated;
+    });
+
+    return;
+  }
+
+  setSelectedSourceTables((current) => [...current, tableName]);
+
+  setRowCountByTable((current) => ({
+    ...current,
+    [tableName]: current[tableName] || sourceRowCount,
+  }));
+
+  if (!sourceColumnsByTable[tableName]) {
+    await fetchColumnsForTable(selectedSourceDatabase, tableName);
+  }
+};
+
+  const toggleSourceColumn = (tableName, columnName) => {
+    setSelectedColumnsByTable((current) => {
+      const currentColumns = current[tableName] || [];
+      const alreadySelected = currentColumns.includes(columnName);
+
+      return {
+        ...current,
+        [tableName]: alreadySelected
+          ? currentColumns.filter((column) => column !== columnName)
+          : [...currentColumns, columnName],
+      };
+    });
+  };
+
+  const generateFromExistingSource = async () => {
+    try {
+      setSourceGenerating(true);
       setUploadError(null);
       setUploadMessage(null);
 
-      const response = await axios.post("http://127.0.0.1:8000/generate-test-data", {
-        template: testTemplate,
-        row_count: Number(rowCount),
-      });
+      const selectedTablesPayload = selectedSourceTables.map((tableName) => ({
+        table_name: tableName,
+        selected_columns: selectedColumnsByTable[tableName] || [],
+        row_count: Number(rowCountByTable[tableName] || sourceRowCount || 100),
+      }));
 
-      if (response.data.status === "SUCCESS") {
-        setUploadMessage(
-          `Generated ${response.data.row_count} rows of ${response.data.template} test data.`
-        );
+      const hasEmptyColumnSelection = selectedTablesPayload.some(
+        (table) => table.selected_columns.length === 0
+      );
 
-        handleDatasetReady(response.data, response.data.filename);
-      } else {
-        setUploadError(response.data.message || "Test data generation failed.");
+      if (hasEmptyColumnSelection) {
+        setSourceGenerating(false);
+        setUploadError("Please select at least one column for every selected table.");
+        return;
       }
 
-      setGenerating(false);
+      const response = await axios.post(
+        "http://127.0.0.1:8000/generate-test-data-from-source",
+        {
+          source: "databricks",
+          database: selectedSourceDatabase,
+          tables: selectedTablesPayload,
+          
+        }
+      );
+
+      if (response.data.status === "SUCCESS") {
+        const generatedDatasets = response.data.datasets || [];
+
+        setUploadMessage(response.data.message);
+
+        if (generatedDatasets.length > 0) {
+          onMultipleDatasetsGenerated(generatedDatasets);
+
+          const firstDataset = generatedDatasets[0];
+          setSelectedFileName(
+            generatedDatasets.length === 1
+              ? firstDataset.filename
+              : `${generatedDatasets.length} source tables generated`
+          );
+          setSelectedDatasetIdLocal(firstDataset.dataset_id);
+        }
+
+        fetchDatasets();
+      } else {
+        setUploadError(response.data.message || "Source-based generation failed.");
+      }
+
+      setSourceGenerating(false);
     } catch (err) {
       console.error(err);
-      setGenerating(false);
-      setUploadError("Unable to generate test data. Make sure FastAPI is running.");
+      setSourceGenerating(false);
+      setUploadError("Unable to generate test data from source metadata.");
     }
   };
 
@@ -912,182 +1069,352 @@ function SourceStep({ onNext, onDatasetUploaded }) {
     (dataset) => dataset.dataset_id === selectedDatasetIdLocal
   );
 
+  const canContinue = Boolean(selectedDatasetIdLocal);
+
   return (
-    <div className="grid gap-5 lg:grid-cols-3">
-      <Card className="rounded-2xl shadow-sm lg:col-span-1">
-        <CardContent className="p-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
-              <Database className="h-6 w-6 text-slate-700" />
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[1.6fr_0.9fr]">
+        <Card className="rounded-2xl shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-slate-100 p-3">
+                  <Database className="h-6 w-6 text-slate-700" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    Source Dataset
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    Select an existing source dataset, or generate new test data from backend source tables.
+                  </p>
+                </div>
+              </div>
+
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                Step 1 · Extraction
+              </span>
             </div>
 
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Source Dataset</h2>
-              <p className="text-sm text-slate-500">
-                Upload, generate, or select an existing dataset.
-              </p>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-slate-700">
+                  Source Connection
+                </label>
+                <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
+                  <option>Databricks Unity Catalog</option>
+                  <option>Local Uploaded CSV / Generated Test Data</option>
+                  <option>PostgreSQL</option>
+                  <option>Oracle</option>
+                  <option>Azure SQL</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-medium text-slate-700">
+                    Existing Datasets
+                  </label>
+
+                  <button
+                    onClick={fetchDatasets}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                <select
+                  value={selectedDatasetIdLocal}
+                  onChange={(event) => handleSelectExistingDataset(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                >
+                  <option value="">
+                    {loadingDatasets ? "Loading datasets..." : "Select existing dataset"}
+                  </option>
+
+                  {availableDatasets.map((dataset) => (
+                    <option key={dataset.dataset_id} value={dataset.dataset_id}>
+                      {dataset.filename}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
 
-          <div className="mt-6 space-y-3">
-            <label className="text-sm font-medium text-slate-700">Connection</label>
-            <select className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
-              <option>Local Uploaded CSV / Generated Test Data</option>
-              <option>Databricks Unity Catalog</option>
-              <option>PostgreSQL</option>
-              <option>Oracle</option>
-              <option>Azure SQL</option>
-            </select>
+            <div className="mt-6 rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-medium text-slate-900">Current Selection</p>
 
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-sm font-medium text-slate-700">
-                Existing Datasets
-              </label>
+              {selectedFileName ? (
+                <div className="mt-3 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Dataset</p>
+                    <p className="mt-1 font-medium text-slate-900">{selectedFileName}</p>
+                  </div>
 
-              <button
-                onClick={fetchDatasets}
-                className="text-xs font-medium text-slate-600 hover:text-slate-900"
-              >
-                Refresh
-              </button>
-            </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Source</p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {selectedDataset?.source_type || "current selection"}
+                    </p>
+                  </div>
 
-            <select
-              value={selectedDatasetIdLocal}
-              onChange={(event) => handleSelectExistingDataset(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
-            >
-              <option value="">
-                {loadingDatasets ? "Loading datasets..." : "Select existing dataset"}
-              </option>
-
-              {availableDatasets.map((dataset) => (
-                <option key={dataset.dataset_id} value={dataset.dataset_id}>
-                  {dataset.filename}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-900">Selected Dataset</p>
-
-            {selectedFileName ? (
-              <div className="mt-3 space-y-2 text-sm text-slate-600">
-                <p>
-                  Name:{" "}
-                  <span className="font-medium text-slate-900">
-                    {selectedFileName}
-                  </span>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Columns</p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {selectedDataset?.columns?.length || "Multiple tables"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">
+                  No dataset selected yet.
                 </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-                <p>
-                  Source:{" "}
-                  <span className="font-medium text-slate-900">
-                    {selectedDataset?.source_type || "current selection"}
-                  </span>
-                </p>
+        <Card className="rounded-2xl shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-slate-100 p-3">
+                <Upload className="h-6 w-6 text-slate-700" />
+              </div>
 
-                <p>
-                  Columns:{" "}
-                  <span className="font-medium text-slate-900">
-                    {selectedDataset?.columns?.length || "Detected"}
-                  </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Quick CSV Upload</h3>
+                <p className="text-sm text-slate-500">
+                  Small fallback option for one-off CSV testing.
                 </p>
               </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">
-                No dataset selected yet.
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+              <p className="text-sm text-slate-500">
+                Upload a CSV and let the backend detect schema.
               </p>
-            )}
-          </div>
 
-          <Button onClick={onNext} className="mt-6 w-full rounded-xl">
-            Continue to Masking Rules
-            <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-2xl border-dashed shadow-sm">
-        <CardContent className="flex h-full min-h-[360px] flex-col items-center justify-center p-6 text-center">
-          <div className="rounded-3xl bg-slate-100 p-5">
-            <Upload className="h-9 w-9 text-slate-700" />
-          </div>
-
-          <h3 className="mt-5 text-lg font-semibold text-slate-900">Upload CSV</h3>
-
-          <p className="mt-2 max-w-sm text-sm text-slate-500">
-            Upload a CSV file and the backend will detect columns and suggest
-            masking rules.
-          </p>
-
-          <label className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50">
-            {uploading ? "Uploading..." : "Choose CSV File"}
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
-        </CardContent>
-      </Card>
+              <label className="mt-4 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50">
+                {uploading ? "Uploading..." : "Choose CSV File"}
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  disabled={uploading}
+                />
+              </label>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
-              <FileText className="h-6 w-6 text-slate-700" />
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Generate Test Data from Existing Source Tables
+              </h3>
+              <p className="text-sm text-slate-500">
+                Choose backend source tables, select only required columns, and generate schema-driven test data.
+              </p>
+            </div>
+
+            <Button
+              onClick={generateFromExistingSource}
+              disabled={
+                sourceGenerating ||
+                !selectedSourceDatabase ||
+                selectedSourceTables.length === 0
+              }
+              className="rounded-xl"
+            >
+              {sourceGenerating ? "Generating..." : "Generate from Source"}
+            </Button>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Source Connection
+              </label>
+              <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
+                <option>Databricks</option>
+              </select>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                Generate Test Data
-              </h3>
-              <p className="text-sm text-slate-500">
-                Create synthetic data for demo and testing.
-              </p>
+              <label className="text-sm font-medium text-slate-700">
+                Database / Catalog.Schema
+              </label>
+              <select
+                value={selectedSourceDatabase}
+                onChange={(event) => {
+                  setSelectedSourceDatabase(event.target.value);
+                  fetchSourceTables(event.target.value);
+                }}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+              >
+                <option value="">Select database</option>
+
+                {sourceDatabases.map((database) => (
+                  <option key={database} value={database}>
+                    {database}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Default Row Count
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="10000"
+                value={sourceRowCount}
+                onChange={(event) => setSourceRowCount(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+              />
             </div>
           </div>
 
-          <div className="mt-6 space-y-3">
-            <label className="text-sm font-medium text-slate-700">Template</label>
-            <select
-              value={testTemplate}
-              onChange={(event) => setTestTemplate(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
-            >
-              <option value="customer">Customer Data</option>
-              <option value="account">Account Data</option>
-              <option value="claims">Claims Data</option>
-              <option value="employee">Employee Data</option>
-            </select>
+          <div className="mt-6 grid gap-5 lg:grid-cols-[260px_1fr]">
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">
+                Available Tables
+              </p>
 
-            <label className="text-sm font-medium text-slate-700">Row Count</label>
-            <input
-              type="number"
-              min="1"
-              max="10000"
-              value={rowCount}
-              onChange={(event) => setRowCount(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
-            />
+              <div className="mt-4 space-y-2">
+                {sourceTables.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    Select a database to load tables.
+                  </p>
+                )}
+
+                {sourceTables.map((tableName) => (
+                  <label
+                    key={tableName}
+                    className="flex cursor-pointer items-center gap-3 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSourceTables.includes(tableName)}
+                      onChange={() => toggleSourceTable(tableName)}
+                    />
+                    {tableName}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">
+                Column Selection
+              </p>
+
+              <div className="mt-4 space-y-5">
+                {selectedSourceTables.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    Select one or more tables to choose columns.
+                  </p>
+                )}
+
+                {selectedSourceTables.map((tableName) => {
+                  const columns = sourceColumnsByTable[tableName] || [];
+                  const selectedColumns = selectedColumnsByTable[tableName] || [];
+
+                  return (
+                    <div key={tableName} className="rounded-2xl bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="font-medium text-slate-900">{tableName}</p>
+                            <p className="text-xs text-slate-500">
+                              {selectedColumns.length} of {columns.length} columns selected
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-medium text-slate-600">
+                              Rows
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="10000"
+                              value={rowCountByTable[tableName] || sourceRowCount}
+                              onChange={(event) =>
+                                setRowCountByTable((current) => ({
+                                  ...current,
+                                  [tableName]: event.target.value,
+                                }))
+                              }
+                              className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs outline-none"
+                            />
+                          </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              setSelectedColumnsByTable((current) => ({
+                                ...current,
+                                [tableName]: columns.map((column) => column.name),
+                              }))
+                            }
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                          >
+                            Select All
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              setSelectedColumnsByTable((current) => ({
+                                ...current,
+                                [tableName]: [],
+                              }))
+                            }
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 md:grid-cols-3">
+                        {columns.map((column) => (
+                          <label
+                            key={`${tableName}-${column.name}`}
+                            className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedColumns.includes(column.name)}
+                              onChange={() => toggleSourceColumn(tableName, column.name)}
+                            />
+                            <span>
+                              {column.name}
+                              <span className="ml-1 text-slate-400">
+                                ({column.type})
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-
-          <Button
-            onClick={handleGenerateTestData}
-            disabled={generating}
-            className="mt-6 w-full rounded-xl"
-          >
-            {generating ? "Generating..." : "Generate Test Data"}
-          </Button>
         </CardContent>
       </Card>
 
       {(selectedFileName || uploadMessage || uploadError) && (
-        <Card className="rounded-2xl shadow-sm lg:col-span-3">
+        <Card className="rounded-2xl shadow-sm">
           <CardContent className="p-5">
             {selectedFileName && (
               <p className="text-sm text-slate-600">
@@ -1112,6 +1439,13 @@ function SourceStep({ onNext, onDatasetUploaded }) {
           </CardContent>
         </Card>
       )}
+
+      <div className="flex justify-end">
+        <Button onClick={onNext} disabled={!canContinue} className="rounded-xl">
+          Continue to Masking Rules
+          <ChevronRight className="ml-2 h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1409,12 +1743,331 @@ useEffect(() => {
   );
 }
 
-function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId }) {
+function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onNext }) {
+  const isDeveloper = currentUser?.role === "developer";
+  const [adminLockedRules, setAdminLockedRules] = useState({});
+  const [tables, setTables] = useState([]);
+
+  useEffect(() => {
+    const fetchAdminLockedRules = async () => {
+      try {
+        const response = await axios.get("http://127.0.0.1:8000/admin-locked-rules");
+
+        const rulesMap = {};
+
+        (response.data.rules || []).forEach((rule) => {
+          if (rule.enabled) {
+            rulesMap[rule.column.toLowerCase()] = {
+              rule: rule.rule,
+              lockedBy: rule.locked_by,
+              reason: rule.reason,
+              developerCanOverride: rule.developer_can_override,
+            };
+          }
+        });
+
+        setAdminLockedRules(rulesMap);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchAdminLockedRules();
+  }, []);
+
+  const normalizeColumns = (columns) =>
+    columns.map((col) => {
+      const lockedRule = adminLockedRules[col.name?.toLowerCase()];
+
+      if (isDeveloper && lockedRule && !lockedRule.developerCanOverride) {
+        return {
+          ...col,
+          ai_suggested_rule: col.ai_suggested_rule || lockedRule.rule,
+          rule: lockedRule.rule,
+          override_allowed: false,
+          admin_locked: true,
+          locked_reason: lockedRule.reason,
+          locked_by: lockedRule.lockedBy,
+        };
+      }
+
+      return {
+        ...col,
+        ai_suggested_rule: col.ai_suggested_rule || col.rule || "No Masking",
+        rule: col.rule || col.ai_suggested_rule || "No Masking",
+        override_allowed: col.override_allowed !== false,
+        admin_locked: false,
+      };
+    });
+
+  useEffect(() => {
+    const safeDatasets =
+      Array.isArray(selectedDatasets) && selectedDatasets.length > 0
+        ? selectedDatasets
+        : [
+            {
+              dataset_id: "sample",
+              filename: "Sample Dataset",
+              source_type: "sample",
+              columns: sampleColumns,
+            },
+          ];
+
+    const normalizedTables = safeDatasets.map((dataset) => ({
+      ...dataset,
+      columns: normalizeColumns(dataset.columns || sampleColumns),
+    }));
+
+    setTables(normalizedTables);
+  }, [selectedDatasets, currentUser, adminLockedRules]);
+
+  useEffect(() => {
+    const rulesByDataset = {};
+
+    tables.forEach((table) => {
+      const rules = {};
+
+      (table.columns || []).forEach((col) => {
+        rules[col.name] = col.rule || "No Masking";
+      });
+
+      rulesByDataset[table.dataset_id] = rules;
+    });
+
+    onRulesChange(rulesByDataset);
+  }, [tables, onRulesChange]);
+
+  const updateRule = (datasetId, columnName, rule) => {
+    const updatedTables = tables.map((table) => {
+      if (table.dataset_id !== datasetId) return table;
+
+      return {
+        ...table,
+        columns: table.columns.map((col) => {
+          if (col.name !== columnName) return col;
+
+          if (isDeveloper && col.admin_locked) {
+            return col;
+          }
+
+          return {
+            ...col,
+            rule,
+          };
+        }),
+      };
+    });
+
+    setTables(updatedTables);
+  };
+
+  const totalColumns = tables.reduce(
+    (count, table) => count + (table.columns?.length || 0),
+    0
+  );
+
+  const piiColumns = tables.reduce(
+    (count, table) =>
+      count + (table.columns || []).filter((col) => col.pii).length,
+    0
+  );
+
+  const adminLockedCount = tables.reduce(
+    (count, table) =>
+      count + (table.columns || []).filter((col) => col.admin_locked).length,
+    0
+  );
+
+  return (
+    <Card className="rounded-2xl shadow-sm">
+      <CardContent className="p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Multi-Table Masking Rule Assignment
+            </h2>
+            <p className="text-sm text-slate-500">
+              Review masking rules for every selected or generated source table before execution.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          <MetricCard
+            icon={TableProperties}
+            label="Tables"
+            value={tables.length}
+            helper="Selected/generated source tables"
+          />
+
+          <MetricCard
+            icon={Tags}
+            label="Total Columns"
+            value={totalColumns}
+            helper="Across all tables"
+          />
+
+          <MetricCard
+            icon={AlertTriangle}
+            label="PII Columns"
+            value={piiColumns}
+            helper="AI-classified sensitive fields"
+          />
+
+          <MetricCard
+            icon={Lock}
+            label="Admin Locked"
+            value={adminLockedCount}
+            helper="Developer cannot override"
+          />
+        </div>
+
+        <div className="mt-6 space-y-6">
+          {tables.map((table) => (
+            <div
+              key={table.dataset_id}
+              className="overflow-hidden rounded-2xl border border-slate-200"
+            >
+              <div className="flex flex-col gap-2 bg-slate-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    {table.table_name || table.filename}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Dataset: {table.filename} · {table.columns?.length || 0} columns
+                  </p>
+                </div>
+
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                  {table.source_type || "dataset"}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px] text-left text-sm">
+                  <thead className="bg-white text-slate-600">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Column</th>
+                      <th className="px-4 py-3 font-medium">Detected Type</th>
+                      <th className="px-4 py-3 font-medium">Classification</th>
+                      <th className="px-4 py-3 font-medium">AI Suggested Rule</th>
+                      <th className="px-4 py-3 font-medium">Final Rule</th>
+                      <th className="px-4 py-3 font-medium">Override Status</th>
+                      <th className="px-4 py-3 font-medium">Lock Reason</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {(table.columns || []).map((col) => {
+                      const isOverridden = col.rule !== col.ai_suggested_rule;
+
+                      return (
+                        <tr key={`${table.dataset_id}-${col.name}`} className="bg-white">
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {col.name}
+                          </td>
+
+                          <td className="px-4 py-3 text-slate-600">
+                            {col.type || "unknown"}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {col.pii ? (
+                              <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                                <AlertTriangle className="mr-1 h-3 w-3" /> PII
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                                Non-PII
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="inline-flex whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                              {col.ai_suggested_rule || "No Masking"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <select
+                              value={col.rule || "No Masking"}
+                              disabled={isDeveloper && col.admin_locked}
+                              onChange={(e) =>
+                                updateRule(table.dataset_id, col.name, e.target.value)
+                              }
+                              className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ${
+                                isDeveloper && col.admin_locked
+                                  ? "cursor-not-allowed bg-slate-100 text-slate-500"
+                                  : "bg-white"
+                              }`}
+                            >
+                              <option>No Masking</option>
+                              <option>Fake Value</option>
+                              <option>Partial Masking</option>
+                              <option>Date Shift</option>
+                              <option>Hash</option>
+                            </select>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {col.admin_locked ? (
+                              <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                                <Lock className="mr-1 h-3 w-3" />
+                                Admin Locked
+                              </span>
+                            ) : isOverridden ? (
+                              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                                User Overridden
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                                AI Accepted
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {col.admin_locked
+                              ? `${col.locked_by}: ${col.locked_reason}`
+                              : "Override allowed"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <Button onClick={onNext} className="rounded-xl">
+            Continue to Job Run
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, selectedDatasets }) {
   const [running, setRunning] = useState(false);
   const [complete, setComplete] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [jobDetails, setJobDetails] = useState(null);
   const [error, setError] = useState(null);
+
+  const selectedDatasetList =
+    Array.isArray(selectedDatasets) && selectedDatasets.length > 0
+      ? selectedDatasets
+      : datasetId
+      ? [{ dataset_id: datasetId, filename: "Selected Dataset" }]
+      : [];
+
+  const isMultiTableRun = selectedDatasetList.length > 1;
 
   const startRun = async () => {
     try {
@@ -1424,17 +2077,37 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
       setJobId(null);
       setJobDetails(null);
 
-      if (!datasetId) {
+      if (selectedDatasetList.length === 0) {
         setRunning(false);
         setError("Please upload, generate, or select a dataset before running anonymization.");
         return;
       }
 
-      const runResponse = await axios.post("http://127.0.0.1:8000/jobs/run", {
-      dataset_id: datasetId,
-      masking_rules: maskingRules,
-      user_role: currentUser?.role || "developer",
-    });
+      let runResponse;
+
+      if (isMultiTableRun) {
+        const datasetsPayload = selectedDatasetList.map((dataset) => ({
+          dataset_id: dataset.dataset_id,
+          masking_rules: maskingRules?.[dataset.dataset_id] || {},
+        }));
+
+        runResponse = await axios.post("http://127.0.0.1:8000/jobs/run-multiple", {
+          datasets: datasetsPayload,
+          user_role: currentUser?.role || "developer",
+        });
+      } else {
+        const primaryDatasetId = selectedDatasetList[0].dataset_id;
+        const rulesForSelectedDataset =
+          primaryDatasetId && maskingRules?.[primaryDatasetId]
+            ? maskingRules[primaryDatasetId]
+            : maskingRules;
+
+        runResponse = await axios.post("http://127.0.0.1:8000/jobs/run", {
+          dataset_id: primaryDatasetId,
+          masking_rules: rulesForSelectedDataset,
+          user_role: currentUser?.role || "developer",
+        });
+      }
 
       if (runResponse.data.status === "FAILED") {
         setRunning(false);
@@ -1464,8 +2137,43 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
         <CardContent className="p-6">
           <h2 className="text-lg font-semibold text-slate-900">Run Anonymization Job</h2>
           <p className="mt-1 text-sm text-slate-500">
-            This button calls the FastAPI backend and runs the local anonymization engine.
+            Submit one dataset or multiple generated source tables to the FastAPI execution layer.
           </p>
+
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Execution Scope
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {isMultiTableRun
+                    ? `${selectedDatasetList.length} source tables will be anonymized in one multi-table job.`
+                    : "One dataset will be anonymized."}
+                </p>
+              </div>
+
+              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                {isMultiTableRun ? "Multi-table run" : "Single-table run"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {selectedDatasetList.map((dataset) => (
+                <div
+                  key={dataset.dataset_id}
+                  className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                >
+                  <p className="font-medium text-slate-900">
+                    {dataset.table_name || dataset.filename || dataset.dataset_id}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 break-all">
+                    {dataset.dataset_id}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-6 rounded-2xl bg-slate-50 p-5">
             <div className="flex items-center justify-between gap-4">
@@ -1486,7 +2194,7 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
                   </p>
                   <p className="text-sm text-slate-500">
                     {complete
-                      ? "Backend completed anonymization for the selected dataset."
+                      ? "Backend completed anonymization for the selected table scope."
                       : running
                       ? "Submitting request to FastAPI backend."
                       : "Review configuration and start anonymization."}
@@ -1525,68 +2233,60 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-  <MetricCard
-    icon={Database}
-    label="Rows Processed"
-    value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "Pending"}
-    helper={jobDetails?.dataset_name || "Selected dataset"}
-  />
+            <MetricCard
+              icon={TableProperties}
+              label="Tables Processed"
+              value={jobDetails ? jobDetails.tables_processed : "Pending"}
+              helper={isMultiTableRun ? "Multi-table execution" : "Single dataset"}
+            />
 
-  <MetricCard
-    icon={Lock}
-    label="Columns Masked"
-    value={jobDetails ? jobDetails.columns_masked : "Pending"}
-    helper="PII fields protected"
-  />
+            <MetricCard
+              icon={Database}
+              label="Rows Processed"
+              value={jobDetails ? jobDetails.rows_processed.toLocaleString() : "Pending"}
+              helper={jobDetails?.dataset_name || "Selected dataset(s)"}
+            />
 
-  <MetricCard
-    icon={Activity}
-    label="Execution Mode"
-    value={jobDetails ? "Databricks" : "Ready"}
-    helper={jobDetails ? jobDetails.execution_mode : "Waiting to submit"}
-  />
+            <MetricCard
+              icon={Lock}
+              label="Columns Masked"
+              value={jobDetails ? jobDetails.columns_masked : "Pending"}
+              helper="PII fields protected"
+            />
 
-  <MetricCard
-    icon={Clock}
-    label="Job Started At"
-    value={
-      jobDetails?.job_started_at
-        ? new Date(jobDetails.job_started_at).toLocaleTimeString()
-        : "Pending"
-    }
-    helper={
-      jobDetails?.job_started_at
-        ? new Date(jobDetails.job_started_at).toLocaleDateString()
-        : "Waiting to start"
-    }
-  />
+            <MetricCard
+              icon={Activity}
+              label="Execution Mode"
+              value={jobDetails ? "Databricks" : "Ready"}
+              helper={jobDetails ? jobDetails.execution_mode : "Waiting to submit"}
+            />
 
-  <MetricCard
-    icon={CheckCircle2}
-    label="Job Ended At"
-    value={
-      jobDetails?.job_ended_at
-        ? new Date(jobDetails.job_ended_at).toLocaleTimeString()
-        : "Pending"
-    }
-    helper={
-      jobDetails?.job_ended_at
-        ? new Date(jobDetails.job_ended_at).toLocaleDateString()
-        : "Waiting to complete"
-    }
-  />
+            <MetricCard
+              icon={Clock}
+              label="Job Started At"
+              value={
+                jobDetails?.job_started_at
+                  ? new Date(jobDetails.job_started_at).toLocaleTimeString()
+                  : "Pending"
+              }
+              helper={
+                jobDetails?.job_started_at
+                  ? new Date(jobDetails.job_started_at).toLocaleDateString()
+                  : "Waiting to start"
+              }
+            />
 
-  <MetricCard
-    icon={Activity}
-    label="Duration"
-    value={
-      jobDetails?.duration_seconds !== undefined
-        ? `${jobDetails.duration_seconds}s`
-        : "Pending"
-    }
-    helper="Total execution time"
-  />
-</div>
+            <MetricCard
+              icon={CheckCircle2}
+              label="Duration"
+              value={
+                jobDetails?.duration_seconds !== undefined
+                  ? `${jobDetails.duration_seconds}s`
+                  : "Pending"
+              }
+              helper="Total execution time"
+            />
+          </div>
 
           {complete && (
             <div className="mt-6 flex justify-end">
@@ -1601,16 +2301,16 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <h3 className="font-semibold text-slate-900">Backend Connected</h3>
+          <h3 className="font-semibold text-slate-900">Execution Behavior</h3>
           <div className="mt-5 space-y-4 text-sm text-slate-600">
             <div className="rounded-xl bg-slate-50 p-4">
-              React sends selected dataset ID and masking rules to FastAPI.
+              React sends every selected dataset ID and its table-specific masking rules to FastAPI.
             </div>
             <div className="rounded-xl bg-slate-50 p-4">
-              FastAPI runs anonymization on uploaded or generated CSV data.
+              FastAPI anonymizes each generated table and creates one parent execution job.
             </div>
             <div className="rounded-xl bg-slate-50 p-4">
-              Later, this same API can trigger Databricks Jobs for large tables.
+              The same pattern can later trigger one Databricks workflow with multiple table tasks.
             </div>
           </div>
         </CardContent>
@@ -1618,6 +2318,7 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId })
     </div>
   );
 }
+
 
 function PreviewTable({ title, rows, warning = false }) {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -1631,13 +2332,16 @@ function PreviewTable({ title, rows, warning = false }) {
     );
   }
 
-  const headers = Object.keys(rows[0]);
+  const headers = Array.from(
+    new Set(rows.flatMap((row) => Object.keys(row)))
+  );
 
   return (
     <Card className="rounded-2xl shadow-sm">
       <CardContent className="p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+
           {warning ? (
             <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
               <AlertTriangle className="mr-1 h-3 w-3" /> Contains PII
@@ -1660,12 +2364,15 @@ function PreviewTable({ title, rows, warning = false }) {
                 ))}
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100">
               {rows.map((row, index) => (
                 <tr key={index}>
                   {headers.map((header) => (
                     <td key={header} className="px-3 py-3 text-slate-700">
-                      {String(row[header])}
+                      {row[header] === undefined || row[header] === null
+                        ? "—"
+                        : String(row[header])}
                     </td>
                   ))}
                 </tr>
@@ -1733,6 +2440,28 @@ function ReviewStep({ jobId }) {
 
   if (!previewData || !auditData) return null;
 
+const groupRowsByTable = (rows) => {
+  const grouped = {};
+
+  (rows || []).forEach((row) => {
+    const tableName = row._table || "Output Preview";
+
+    if (!grouped[tableName]) {
+      grouped[tableName] = [];
+    }
+
+    grouped[tableName].push(row);
+  });
+
+  return grouped;
+};
+
+const beforeGroups = groupRowsByTable(previewData.before);
+const afterGroups = groupRowsByTable(previewData.after);
+const tableNames = Array.from(
+  new Set([...Object.keys(beforeGroups), ...Object.keys(afterGroups)])
+);
+
   const auditRows = [
     { metric: "Total rows processed", value: auditData.total_rows_processed.toLocaleString() },
     { metric: "Tables processed", value: auditData.tables_processed },
@@ -1762,9 +2491,27 @@ function ReviewStep({ jobId }) {
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <PreviewTable title="Before Anonymization" rows={previewData.before} warning />
-        <PreviewTable title="After Anonymization" rows={previewData.after} />
+      <div className="space-y-6">
+        {tableNames.map((tableName) => (
+          <div key={tableName} className="space-y-4">
+            <div className="rounded-2xl bg-slate-900 px-5 py-3 text-white">
+              <p className="text-sm font-semibold">Table: {tableName}</p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <PreviewTable
+                title="Before Anonymization"
+                rows={beforeGroups[tableName] || []}
+                warning
+              />
+
+              <PreviewTable
+                title="After Anonymization"
+                rows={afterGroups[tableName] || []}
+              />
+            </div>
+          </div>
+        ))}
       </div>
 
       <Card className="rounded-2xl shadow-sm">
@@ -1807,6 +2554,8 @@ function CreatePipelinePage({
   setMaskingRules,
   selectedDatasetId,
   setSelectedDatasetId,
+  selectedDatasets,
+  setSelectedDatasets,
   detectedColumns,
   setDetectedColumns,
 }) {
@@ -1846,6 +2595,7 @@ function CreatePipelinePage({
               setActiveStep(1);
               setCurrentJobId(null);
               setSelectedDatasetId(null);
+              setSelectedDatasets([]);
               setDetectedColumns(sampleColumns);
               setMaskingRules({});
             }}
@@ -1864,24 +2614,60 @@ function CreatePipelinePage({
         {activeStep === 1 && (
           <SourceStep
             onDatasetUploaded={({ datasetId, columns }) => {
+              const safeColumns = Array.isArray(columns) ? columns : sampleColumns;
+
               setSelectedDatasetId(datasetId);
-              setDetectedColumns(columns);
+              setSelectedDatasets([
+                {
+                  dataset_id: datasetId,
+                  filename: "Selected Dataset",
+                  source_type: "selected_dataset",
+                  columns: safeColumns,
+                },
+              ]);
+              setDetectedColumns(safeColumns);
 
               const selectedRules = {};
-              columns.forEach((col) => {
+              safeColumns.forEach((col) => {
                 selectedRules[col.name] = col.rule || "No Masking";
               });
 
-              setMaskingRules(selectedRules);
+              setMaskingRules({
+                [datasetId]: selectedRules,
+              });
+            }}
+            onMultipleDatasetsGenerated={(datasets) => {
+              const safeDatasets = Array.isArray(datasets) ? datasets : [];
+
+              setSelectedDatasets(safeDatasets);
+
+              if (safeDatasets.length > 0) {
+                setSelectedDatasetId(safeDatasets[0].dataset_id);
+                setDetectedColumns(safeDatasets[0].columns || sampleColumns);
+              }
+
+              const rulesByDataset = {};
+
+              safeDatasets.forEach((dataset) => {
+                const rules = {};
+
+                (dataset.columns || []).forEach((col) => {
+                  rules[col.name] = col.rule || "No Masking";
+                });
+
+                rulesByDataset[dataset.dataset_id] = rules;
+              });
+
+              setMaskingRules(rulesByDataset);
             }}
             onNext={() => setActiveStep(2)}
           />
         )}
 
         {activeStep === 2 && (
-          <RulesStep
+          <MultiTableRulesStep
             currentUser={currentUser}
-            detectedColumns={detectedColumns}
+            selectedDatasets={selectedDatasets}
             onRulesChange={(rules) => setMaskingRules(rules)}
             onNext={() => setActiveStep(3)}
           />
@@ -1889,12 +2675,13 @@ function CreatePipelinePage({
 
         {activeStep === 3 && (
           <RunStep
-          currentUser={currentUser}
-          datasetId={selectedDatasetId}
-          maskingRules={maskingRules}
-          onJobCreated={(jobId) => setCurrentJobId(jobId)}
-          onNext={() => setActiveStep(4)}
-        />
+            currentUser={currentUser}
+            datasetId={selectedDatasetId}
+            selectedDatasets={selectedDatasets}
+            maskingRules={maskingRules}
+            onJobCreated={(jobId) => setCurrentJobId(jobId)}
+            onNext={() => setActiveStep(4)}
+          />
         )}
 
         {activeStep === 4 && <ReviewStep jobId={currentJobId} />}
@@ -2564,8 +3351,8 @@ const deleteLockedRule = async (columnName) => {
 
   <select
   disabled={!isAdmin}
-  value={selectedColumn}
-  onChange={(event) => setSelectedColumn(event.target.value)}
+  value={selectedDatasetForColumns}
+  onChange={(event) => setSelectedDatasetForColumns(event.target.value)}
   className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
 >
     <option value="">Select dataset</option>
@@ -2584,9 +3371,10 @@ const deleteLockedRule = async (columnName) => {
   </label>
 
   <select
+    disabled={!isAdmin}
     value={selectedColumn}
     onChange={(event) => setSelectedColumn(event.target.value)}
-    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
   >
     <option value="">Select column</option>
 
@@ -2976,6 +3764,7 @@ export default function App() {
   const [currentJobId, setCurrentJobId] = useState(null);
   const [maskingRules, setMaskingRules] = useState({});
   const [selectedDatasetId, setSelectedDatasetId] = useState(null);
+  const [selectedDatasets, setSelectedDatasets] = useState([]);
   const [detectedColumns, setDetectedColumns] = useState(sampleColumns);
   const [backendSessionChecked, setBackendSessionChecked] = useState(false);
 
@@ -3017,6 +3806,7 @@ export default function App() {
   setActiveStep(1);
   setCurrentJobId(null);
   setSelectedDatasetId(null);
+  setSelectedDatasets([]);
   setDetectedColumns(sampleColumns);
   setMaskingRules({});
 };
@@ -3035,6 +3825,7 @@ const handleLoginSuccess = async (user) => {
     setActiveStep(1);
     setCurrentJobId(null);
     setSelectedDatasetId(null);
+    setSelectedDatasets([]);
     setDetectedColumns(sampleColumns);
     setMaskingRules({});
   } catch (err) {
@@ -3083,6 +3874,8 @@ if (!backendSessionChecked) {
           setMaskingRules={setMaskingRules}
           selectedDatasetId={selectedDatasetId}
           setSelectedDatasetId={setSelectedDatasetId}
+          selectedDatasets={selectedDatasets}
+          setSelectedDatasets={setSelectedDatasets}
           detectedColumns={detectedColumns}
           setDetectedColumns={setDetectedColumns}
         />

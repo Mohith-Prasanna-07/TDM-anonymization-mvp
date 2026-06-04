@@ -10,19 +10,19 @@
   },
   {
     "table_contains": null,
-    "column": "ssn",
-    "rule": "Fake Value",
+    "column": "account_id",
+    "rule": "Partial Masking",
     "locked_by": "TDM Admin",
-    "reason": "Sensitive",
+    "reason": "Sensitive data",
     "developer_can_override": false,
     "enabled": true
   },
   {
     "table_contains": null,
-    "column": "account_id",
-    "rule": "Partial Masking",
+    "column": "ssn",
+    "rule": "Fake Value",
     "locked_by": "TDM Admin",
-    "reason": "Sensitive data",
+    "reason": "Sensitive Information",
     "developer_can_override": false,
     "enabled": true
   }
