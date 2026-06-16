@@ -34,6 +34,8 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 function Card({ children, className = "" }) {
   return <div className={`bg-white border border-slate-200 ${className}`}>{children}</div>;
 }
@@ -42,9 +44,162 @@ function CardContent({ children, className = "" }) {
   return <div className={className}>{children}</div>;
 }
 
+
+const blueprintWorkspaces = [
+  {
+    name: "Claims Modernization",
+    owner: "Priya Shah",
+    environment: "DEV",
+    description: "Workspace for claims source systems, sandbox schemas, masked data, and QA-ready pipelines.",
+    domains: [
+      {
+        name: "Claims",
+        asset: "Claims Core Asset",
+        tables: ["patient_records", "appointments", "insurance_claims"],
+        pipelines: ["Claims_Daily_Masking", "Claims_QA_Subset"],
+      },
+      {
+        name: "Provider",
+        asset: "Provider Reference Asset",
+        tables: ["doctor_reference", "department_reference"],
+        pipelines: ["Provider_Weekly_Masking"],
+      },
+    ],
+  },
+  {
+    name: "Customer 360 QA",
+    owner: "Alex Chen",
+    environment: "QA",
+    description: "Workspace for customer profile testing, contact masking, and regression-ready datasets.",
+    domains: [
+      {
+        name: "Customer",
+        asset: "Customer Golden Record",
+        tables: ["customer_profile", "customer_contact", "customer_address"],
+        pipelines: ["C360_Nightly_Masking"],
+      },
+      {
+        name: "Preferences",
+        asset: "Marketing Preference Asset",
+        tables: ["email_preferences", "sms_preferences"],
+        pipelines: ["Preference_Masking_Weekly"],
+      },
+    ],
+  },
+  {
+    name: "Salesforce Sandbox",
+    owner: "Maya Patel",
+    environment: "UAT",
+    description: "Workspace for CRM object extraction and masked sandbox refresh validation.",
+    domains: [
+      {
+        name: "CRM",
+        asset: "CRM Lead Asset",
+        tables: ["account", "contact", "lead", "opportunity", "case"],
+        pipelines: ["SFDC_Sandbox_Refresh"],
+      },
+    ],
+  },
+];
+
+const blueprintConnections = [
+  {
+    name: "SQL_PROD_HEALTHCARE",
+    type: "SQL Server",
+    sourceType: "DB",
+    connection: "sql-prod.company.com:1433/DDB",
+    status: "Connected",
+    purpose: "Production-like source metadata and schema discovery",
+  },
+  {
+    name: "DBX_TDM_MASKED",
+    type: "Databricks",
+    sourceType: "Target",
+    connection: "healthcare_catalog.patient_schema",
+    status: "Connected",
+    purpose: "Masked test data landing and execution orchestration",
+  },
+  {
+    name: "SQL_QA_MASKED",
+    type: "SQL Server",
+    sourceType: "Target",
+    connection: "sql-qa.company.com:1433/TDM_QA",
+    status: "Draft",
+    purpose: "QA target for project-specific sandbox outputs",
+  },
+  {
+    name: "SFTP_MEMBER_FEED",
+    type: "SFTP",
+    sourceType: "File",
+    connection: "sftp://feeds.company.com/inbound/member",
+    status: "Connected",
+    purpose: "Future file-based source ingestion",
+  },
+];
+
+const blueprintPipelines = [
+  {
+    name: "Claims_Daily_Masking",
+    workspace: "Claims Modernization",
+    source: "SQL_PROD_HEALTHCARE",
+    target: "DBX_TDM_MASKED",
+    sandbox: "person_a_project_001_dev_schema",
+    lastRun: "2026-06-12 08:30 AM",
+    tables: ["patient_records", "appointments", "insurance_claims"],
+    status: "Ready",
+  },
+  {
+    name: "Patient_QA_Refresh",
+    workspace: "Claims Modernization",
+    source: "SQL_PROD_HEALTHCARE",
+    target: "SQL_QA_MASKED",
+    sandbox: "person_b_project_002_qa_schema",
+    lastRun: "2026-06-11 09:15 PM",
+    tables: ["patient_records", "insurance_claims"],
+    status: "Draft",
+  },
+  {
+    name: "Regression_Claims_Masking",
+    workspace: "Customer 360 QA",
+    source: "SQL_PROD_HEALTHCARE",
+    target: "DBX_TDM_MASKED",
+    sandbox: "person_c_project_003_regression_schema",
+    lastRun: "Not executed yet",
+    tables: ["patient_records", "appointments", "insurance_claims", "customer_profile"],
+    status: "In Review",
+  },
+];
+
+const maskedAssetSamples = [
+  {
+    asset: "Patient Records Masked Asset",
+    workspace: "Claims Modernization",
+    sandbox: "person_a_project_001_dev_schema",
+    tables: ["patient_records", "appointments"],
+    rows: "150",
+    status: "Ready",
+  },
+  {
+    asset: "Claims QA Masked Asset",
+    workspace: "Claims Modernization",
+    sandbox: "person_b_project_002_qa_schema",
+    tables: ["patient_records", "insurance_claims"],
+    rows: "250",
+    status: "Ready",
+  },
+  {
+    asset: "Regression Masked Asset",
+    workspace: "Customer 360 QA",
+    sandbox: "person_c_project_003_regression_schema",
+    tables: ["patient_records", "appointments", "insurance_claims"],
+    rows: "375",
+    status: "Draft",
+  },
+];
+
 function Button({ children, onClick, disabled, variant = "default", className = "", type = "button" }) {
   const base =
-    "inline-flex items-center justify-center px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center px-4 py-2 text-[13px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed";
 
   const styles =
     variant === "outline"
@@ -69,10 +224,10 @@ const sampleColumns = [
 ];
 
 const workflowSteps = [
-  { id: 1, label: "Source", icon: Database },
-  { id: 2, label: "Rules", icon: Settings },
-  { id: 3, label: "Run", icon: Play },
-  { id: 4, label: "Review", icon: Eye },
+  { id: 1, label: "Sandbox & Source", icon: Database },
+  { id: 2, label: "Rule Configuration", icon: Settings },
+  { id: 3, label: "Run Summary", icon: Play },
+  { id: 4, label: "Review Output", icon: Eye },
 ];
 
 const navGroups = [
@@ -81,7 +236,8 @@ const navGroups = [
     items: [
       { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { key: "data_inventory", label: "Data Inventory", icon: Boxes },
-      { key: "workspaces", label: "Workspaces", icon: Briefcase },
+      { key: "workspaces", label: "Workspace", icon: Briefcase },
+      { key: "metadata_versions", label: "Metadata Versions", icon: History },
     ],
   },
   {
@@ -89,17 +245,17 @@ const navGroups = [
     items: [
       { key: "source_connections", label: "Source Connections", icon: Plug },
       { key: "data_classification", label: "Data Classification", icon: Tags },
-      { key: "masking_rules", label: "Masking Rules", icon: SlidersHorizontal },
+      { key: "masking_rules", label: "Rule Configuration", icon: SlidersHorizontal },
       { key: "subsetting_rules", label: "Subsetting Rules", icon: ListChecks },
     ],
   },
   {
     group: "Execute",
     items: [
-      { key: "create_pipeline", label: "Create Pipeline", icon: Play },
+      { key: "create_pipeline", label: "Pipeline Workspace", icon: Play },
       { key: "existing_pipelines", label: "Existing Pipelines", icon: History },
-      { key: "job_monitor", label: "Job Monitor", icon: Activity },
-      { key: "data_preview", label: "Data Preview & Validation", icon: TableProperties },
+      { key: "job_monitor", label: "Execution Monitor", icon: Activity },
+      { key: "data_preview", label: "Masked Data Assets", icon: TableProperties },
     ],
   },
   {
@@ -121,9 +277,9 @@ function MetricCard({ icon: Icon, label, value, helper }) {
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-slate-500">{label}</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
-            <p className="mt-1 text-xs text-slate-500">{helper}</p>
+            <p className="text-[13px] text-slate-500">{label}</p>
+            <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+            <p className="mt-1 text-[11px] text-slate-500">{helper}</p>
           </div>
           <div className="rounded-2xl bg-slate-100 p-3">
             <Icon className="h-5 w-5 text-slate-700" />
@@ -172,15 +328,15 @@ function LoginPage({ onLogin }) {
             <Shield className="h-10 w-10" />
           </div>
 
-          <p className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-400">
+          <p className="mt-8 text-[13px] font-medium uppercase tracking-wide text-slate-400">
             TDM Secure Workspace
           </p>
 
-          <h1 className="mt-3 text-4xl font-bold tracking-tight md:text-5xl">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight md:text-3xl">
             Data Anonymization Control Center
           </h1>
 
-          <p className="mt-5 max-w-xl text-sm leading-6 text-slate-300 md:text-base">
+          <p className="mt-5 max-w-xl text-[13px] leading-6 text-slate-300 md:text-[14px]">
             Sign in to access extraction, synthetic test data generation, anonymization,
             job monitoring, audit validation, role-based access, and assistant-driven TDM support.
           </p>
@@ -188,7 +344,7 @@ function LoginPage({ onLogin }) {
           <div className="mt-8 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <p className="font-semibold text-white">Admin</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
+              <p className="mt-2 text-[11px] leading-5 text-slate-400">
                 Full access to dashboards, data inventory, rule configuration, pipelines,
                 monitoring, user access, and configuration.
               </p>
@@ -196,7 +352,7 @@ function LoginPage({ onLogin }) {
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <p className="font-semibold text-white">Developer</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
+              <p className="mt-2 text-[11px] leading-5 text-slate-400">
                 Access to assigned workflows, data classification, masking, pipeline execution,
                 preview, and job monitoring.
               </p>
@@ -206,8 +362,8 @@ function LoginPage({ onLogin }) {
 
         <Card className="rounded-3xl shadow-xl">
           <CardContent className="p-8">
-            <h2 className="text-2xl font-bold text-slate-950">Sign in</h2>
-            <p className="mt-2 text-sm text-slate-500">Use demo credentials to enter the MVP.</p>
+            <h2 className="text-xl font-bold text-slate-950">Sign in</h2>
+            <p className="mt-2 text-[13px] text-slate-500">Use demo credentials to enter the MVP.</p>
 
             <div className="mt-6 grid gap-3 md:grid-cols-2">
               <Button
@@ -235,28 +391,28 @@ function LoginPage({ onLogin }) {
 
             <div className="mt-6 space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700">Email</label>
+                <label className="text-[13px] font-medium text-slate-700">Email</label>
                 <input
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
                   placeholder="admin@tdm.com"
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-slate-700">Password</label>
+                <label className="text-[13px] font-medium text-slate-700">Password</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
                   placeholder="Password"
                 />
               </div>
 
               {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
                   {error}
                 </div>
               )}
@@ -266,7 +422,7 @@ function LoginPage({ onLogin }) {
               </Button>
             </div>
 
-            <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-xs text-slate-600">
+            <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-[11px] text-slate-600">
               <p className="font-medium text-slate-800">Demo credentials</p>
               <p className="mt-2">Admin: admin@tdm.com / Admin@123</p>
               <p>Developer: developer@tdm.com / Dev@123</p>
@@ -285,7 +441,14 @@ function EnterpriseSideMenu({
   isMenuCollapsed,
   setIsMenuCollapsed,
 }) {
-  const permissions = currentUser?.permissions || [];
+  const permissions = [
+    ...(currentUser?.permissions || []),
+    "workspaces",
+    "metadata_versions",
+    "source_connections",
+    "existing_pipelines",
+    "data_preview",
+  ];
 
   const [openGroups, setOpenGroups] = useState({
     Main: false,
@@ -325,11 +488,11 @@ function EnterpriseSideMenu({
 
   if (isMenuCollapsed) {
     return (
-      <aside className="w-full rounded-3xl bg-slate-950 p-4 text-white shadow-sm lg:min-h-screen lg:w-24">
+      <aside className="w-full min-w-0 overflow-hidden rounded-3xl bg-slate-950 p-3 text-white shadow-sm lg:min-h-screen">
         <div className="flex flex-col items-center gap-4">
           <button
             onClick={() => setIsMenuCollapsed(false)}
-            className="rounded-2xl bg-white/10 p-3 transition hover:bg-white/20"
+            className="rounded-xl bg-white/10 p-2.5 transition hover:bg-white/20"
             title="Expand menu"
           >
             <PanelLeftOpen className="h-5 w-5" />
@@ -346,7 +509,7 @@ function EnterpriseSideMenu({
                 key={item.key}
                 onClick={() => setActivePage(item.key)}
                 title={item.label}
-                className={`rounded-2xl p-3 transition ${
+                className={`shrink-0 rounded-2xl p-3 transition ${
                   isActive
                     ? "bg-white text-slate-950"
                     : "bg-white/5 text-slate-300 hover:bg-white/10"
@@ -362,24 +525,24 @@ function EnterpriseSideMenu({
   }
 
   return (
-    <aside className="w-full rounded-3xl bg-slate-950 p-5 text-white shadow-sm lg:min-h-screen lg:w-80">
+    <aside className="w-full min-w-0 overflow-hidden rounded-3xl bg-slate-950 p-4 text-white shadow-sm lg:min-h-screen">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-white/10 p-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 rounded-2xl bg-white/10 p-3">
             <Layers className="h-6 w-6" />
           </div>
 
-          <div>
-            <p className="text-sm uppercase tracking-wide text-slate-400">
+          <div className="min-w-0">
+            <p className="truncate text-[13px] uppercase tracking-wide text-slate-400">
               TDM Platform
             </p>
-            <h2 className="text-xl font-semibold text-white">Control Panel</h2>
+            <h2 className="truncate text-lg font-semibold text-white">Control Panel</h2>
           </div>
         </div>
 
         <button
           onClick={() => setIsMenuCollapsed(true)}
-          className="rounded-2xl bg-white/10 p-3 transition hover:bg-white/20"
+          className="shrink-0 rounded-2xl bg-white/10 p-3 transition hover:bg-white/20"
           title="Collapse menu"
         >
           <PanelLeftClose className="h-5 w-5" />
@@ -387,13 +550,13 @@ function EnterpriseSideMenu({
       </div>
 
       <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-xs uppercase tracking-wide text-slate-400">
+        <p className="text-[11px] uppercase tracking-wide text-slate-400">
           Signed in as
         </p>
-        <p className="mt-1 text-sm font-semibold text-white">
+        <p className="mt-1 truncate text-[13px] font-semibold text-white">
           {currentUser?.name}
         </p>
-        <p className="mt-1 text-xs capitalize text-slate-400">
+        <p className="mt-1 truncate text-[11px] capitalize text-slate-400">
           {currentUser?.role}
         </p>
       </div>
@@ -408,7 +571,7 @@ function EnterpriseSideMenu({
                 onClick={() => toggleGroup(group.group)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"
               >
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   {group.group}
                 </span>
 
@@ -435,17 +598,17 @@ function EnterpriseSideMenu({
                             : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
                         }`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
                           <div
-                            className={`rounded-xl p-2 ${
+                            className={`shrink-0 rounded-xl p-2 ${
                               isActive ? "bg-slate-100" : "bg-white/10"
                             }`}
                           >
                             <Icon className="h-5 w-5" />
                           </div>
 
-                          <div>
-                            <p className="text-sm font-medium">{item.label}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium leading-5">{item.label}</p>
                           </div>
                         </div>
                       </button>
@@ -459,8 +622,8 @@ function EnterpriseSideMenu({
       </div>
 
       <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-sm font-medium text-white">Role-Based MVP</p>
-        <p className="mt-2 text-xs leading-5 text-slate-400">
+        <p className="text-[13px] font-medium text-white">Role-Based MVP</p>
+        <p className="mt-2 text-[11px] leading-5 text-slate-400">
           Menu groups expand only when selected. Use the collapse button to keep
           the workspace focused.
         </p>
@@ -475,21 +638,21 @@ function PageHeader({ title, description, icon: Icon }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="rounded-3xl bg-white p-6 shadow-sm md:p-8"
+      className="rounded-2xl bg-white px-5 py-4 shadow-sm md:px-6 md:py-5"
     >
-      <div className="flex items-center gap-4">
-        <div className="rounded-3xl bg-slate-900 p-4 text-white">
-          <Icon className="h-8 w-8" />
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-slate-900 p-3 text-white">
+          <Icon className="h-6 w-6" />
         </div>
 
         <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
             TDM Modernization MVP
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 md:text-4xl">
+          <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-slate-950 md:text-xl">
             {title}
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500 md:text-base">
+          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-slate-500 md:text-[13px]">
             {description}
           </p>
         </div>
@@ -558,6 +721,7 @@ function DashboardPage() {
         description="High-level view of pipeline activity, recent jobs, anonymization status, and output readiness."
         icon={LayoutDashboard}
       />
+      <EnterpriseBlueprintMetrics />
       <DashboardSummary />
       <JobHistory />
     </div>
@@ -596,8 +760,8 @@ function DataInventoryPage() {
         <CardContent className="p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Available Datasets</h2>
-              <p className="text-sm text-slate-500">Datasets exist for the current backend session.</p>
+              <h2 className="text-base font-semibold text-slate-900">Available Datasets</h2>
+              <p className="text-[13px] text-slate-500">Datasets exist for the current backend session.</p>
             </div>
 
             <Button variant="outline" className="rounded-xl" onClick={fetchDatasets}>
@@ -605,10 +769,10 @@ function DataInventoryPage() {
             </Button>
           </div>
 
-          {loading && <p className="mt-5 text-sm text-slate-500">Loading datasets...</p>}
+          {loading && <p className="mt-5 text-[13px] text-slate-500">Loading datasets...</p>}
 
           {!loading && datasets.length === 0 && (
-            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-[13px] text-slate-600">
               No datasets found. Go to Execute → Create Pipeline to upload or generate data.
             </div>
           )}
@@ -620,12 +784,12 @@ function DataInventoryPage() {
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p className="font-semibold text-slate-900">{dataset.filename}</p>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-[11px] text-slate-500">
                         Source: {dataset.source_type} · Uploaded:{" "}
                         {new Date(dataset.uploaded_at).toLocaleString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
                       {dataset.columns?.length || 0} columns
                     </span>
                   </div>
@@ -634,7 +798,7 @@ function DataInventoryPage() {
                     {(dataset.columns || []).map((column) => (
                       <span
                         key={column.name}
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        className={`rounded-full px-3 py-1 text-[11px] font-medium ${
                           column.pii
                             ? "bg-amber-50 text-amber-700"
                             : "bg-slate-100 text-slate-600"
@@ -654,6 +818,1801 @@ function DataInventoryPage() {
   );
 }
 
+
+
+function MetadataVersionsPage() {
+  const [sandboxes, setSandboxes] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [sourceDatabases, setSourceDatabases] = useState([]);
+  const [selectedSandboxId, setSelectedSandboxId] = useState("");
+  const [sourceMetadataDatabase, setSourceMetadataDatabase] = useState("healthcare_catalog.patient_schema");
+  const [selectedTablesText, setSelectedTablesText] = useState("");
+  const [versionLabel, setVersionLabel] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [validationVersionId, setValidationVersionId] = useState("");
+  const [driftMode, setDriftMode] = useState("additive");
+  const [validationResult, setValidationResult] = useState(null);
+  const [validating, setValidating] = useState(false);
+  const [successorCreating, setSuccessorCreating] = useState(false);
+
+  const selectedSandbox = sandboxes.find((sandbox) => sandbox.sandbox_id === selectedSandboxId);
+
+  const fetchMetadataWorkspace = async () => {
+    try {
+      const [sandboxResponse, versionResponse, databaseResponse] = await Promise.all([
+        axios.get(`${API_BASE_URL}/sandboxes`),
+        axios.get(`${API_BASE_URL}/metadata/versions`),
+        axios.get(`${API_BASE_URL}/source-metadata/databricks/databases`),
+      ]);
+
+      if (sandboxResponse.data.status === "SUCCESS") {
+        setSandboxes(sandboxResponse.data.sandboxes || []);
+      }
+
+      if (versionResponse.data.status === "SUCCESS") {
+        setVersions(versionResponse.data.versions || []);
+      }
+
+      if (databaseResponse.data.status === "SUCCESS") {
+        const databases = databaseResponse.data.databases || [];
+        setSourceDatabases(databases);
+        if (databases.length > 0 && !databases.includes(sourceMetadataDatabase)) {
+          setSourceMetadataDatabase(databases[0]);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Unable to load metadata version workspace.");
+    }
+  };
+
+  useEffect(() => {
+    fetchMetadataWorkspace();
+  }, []);
+
+  useEffect(() => {
+    const sandbox = sandboxes.find((item) => item.sandbox_id === selectedSandboxId);
+
+    if (sandbox) {
+      setSelectedTablesText((sandbox.selected_tables || []).join(", "));
+    }
+  }, [selectedSandboxId, sandboxes]);
+
+  const createMetadataVersion = async () => {
+    setMessage("");
+    setError("");
+    setValidationResult(null);
+
+    if (!selectedSandboxId) {
+      setError("Please select a sandbox/project first.");
+      return;
+    }
+
+    const selectedTables = selectedTablesText
+      .split(",")
+      .map((table) => table.trim())
+      .filter(Boolean);
+
+    if (selectedTables.length === 0) {
+      setError("Please enter at least one table for the metadata version.");
+      return;
+    }
+
+    try {
+      setCreating(true);
+
+      const response = await axios.post(`${API_BASE_URL}/metadata/versions/from-sandbox`, {
+        sandbox_id: selectedSandboxId,
+        source_metadata_database: sourceMetadataDatabase,
+        selected_tables: selectedTables,
+        version_label: versionLabel.trim() || null,
+        change_summary: "Project-specific source metadata snapshot created from sandbox.",
+      });
+
+      if (response.data.status === "SUCCESS") {
+        setMessage(
+          `Created metadata ${response.data.version.version_label} for ${response.data.version.project_id} and linked it to ${response.data.version.sandbox_schema}.`
+        );
+        setVersionLabel("");
+        setValidationVersionId(response.data.version.metadata_version_id);
+        await fetchMetadataWorkspace();
+      } else {
+        setError(response.data.message || "Failed to create metadata version.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || err.message || "Failed to create metadata version.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const validateDrift = async () => {
+    setMessage("");
+    setError("");
+
+    if (!validationVersionId) {
+      setError("Please select a metadata version to validate.");
+      return;
+    }
+
+    try {
+      setValidating(true);
+      const response = await axios.post(
+        `${API_BASE_URL}/metadata/versions/${validationVersionId}/validate-drift`,
+        { drift_mode: driftMode }
+      );
+
+      if (response.data.status === "SUCCESS") {
+        setValidationResult(response.data);
+      } else {
+        setError(response.data.message || "Failed to validate schema drift.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || err.message || "Failed to validate schema drift.");
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const createSuccessorVersion = async () => {
+    if (!validationVersionId) return;
+
+    try {
+      setSuccessorCreating(true);
+      const response = await axios.post(
+        `${API_BASE_URL}/metadata/versions/${validationVersionId}/create-successor`,
+        {
+          drift_mode: driftMode,
+          change_summary: "Successor metadata version created after schema drift mitigation.",
+        }
+      );
+
+      if (response.data.status === "SUCCESS") {
+        setMessage(
+          `Created successor metadata ${response.data.new_version.version_label}. Previous version is preserved.`
+        );
+        setValidationVersionId(response.data.new_version.metadata_version_id);
+        setValidationResult(null);
+        await fetchMetadataWorkspace();
+      } else {
+        setError(response.data.message || "Failed to create successor version.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || err.message || "Failed to create successor version.");
+    } finally {
+      setSuccessorCreating(false);
+    }
+  };
+
+  const activeVersions = versions.filter((version) => version.status === "ACTIVE").length;
+  const totalProjects = new Set(versions.map((version) => version.project_id).filter(Boolean)).size;
+  const totalColumns = versions.reduce((sum, version) => sum + (version.column_count || 0), 0);
+
+  const statusBadgeClass = (status) => {
+    if (status === "BLOCKED") return "bg-rose-50 text-rose-700";
+    if (status === "WARNING") return "bg-amber-50 text-amber-700";
+    if (status === "PASSED" || status === "READY") return "bg-emerald-50 text-emerald-700";
+    return "bg-slate-100 text-slate-600";
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Metadata Versions"
+        description="Show how different projects work on different versions of the same source metadata while preserving sandbox isolation and schema drift controls."
+        icon={History}
+      />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard icon={History} label="Metadata Versions" value={versions.length} helper="All saved source metadata snapshots" />
+        <MetricCard icon={Briefcase} label="Projects Covered" value={totalProjects} helper="Independent project-level versions" />
+        <MetricCard icon={Database} label="Columns Versioned" value={totalColumns} helper="Columns captured across versions" />
+      </div>
+
+      <Card className="rounded-3xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Project-Based Source Metadata Versioning</h2>
+              <p className="mt-1 max-w-4xl text-[13px] text-slate-500">
+                Each project/sandbox can hold its own source metadata version. Project #1 can run V1, Project #2 can run V2, and Project #3 can run V3, even when the selected tables overlap. Changes are scoped to the sandbox and version, not the shared source table.
+              </p>
+            </div>
+            <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700">
+              Versioned Metadata Repository
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Project Sandbox</label>
+              <select
+                value={selectedSandboxId}
+                onChange={(event) => setSelectedSandboxId(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="">Select sandbox</option>
+                {sandboxes.map((sandbox) => (
+                  <option key={sandbox.sandbox_id} value={sandbox.sandbox_id}>
+                    {sandbox.project_id} — {sandbox.sandbox_schema}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Source Metadata</label>
+              <select
+                value={sourceMetadataDatabase}
+                onChange={(event) => setSourceMetadataDatabase(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                {sourceDatabases.map((database) => (
+                  <option key={database} value={database}>{database}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Version Label</label>
+              <input
+                value={versionLabel}
+                onChange={(event) => setVersionLabel(event.target.value)}
+                placeholder="Auto, e.g. V1"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <Button
+                onClick={createMetadataVersion}
+                disabled={creating}
+                className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700"
+              >
+                {creating ? "Creating..." : "Create Metadata Version"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-1 block text-[11px] font-medium text-slate-600">Tables in this metadata version</label>
+            <textarea
+              value={selectedTablesText}
+              onChange={(event) => setSelectedTablesText(event.target.value)}
+              rows={2}
+              placeholder="patient_records, appointments, insurance_claims"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+            />
+            {selectedSandbox && (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Active sandbox: <span className="font-semibold text-slate-700">{selectedSandbox.sandbox_schema}</span> · Owner: {selectedSandbox.owner} · Target: {selectedSandbox.target_environment}
+              </p>
+            )}
+          </div>
+
+          {message && (
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              {message}
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+              {error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Schema Drift Validation & Mitigation</h2>
+              <p className="mt-1 text-[13px] text-slate-500">
+                New columns are treated as non-blocking additive drift. Missing, deleted, renamed, or structurally changed existing columns require intervention.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">
+              Additive = Allow · Breaking = Block
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Metadata Version</label>
+              <select
+                value={validationVersionId}
+                onChange={(event) => {
+                  setValidationVersionId(event.target.value);
+                  setValidationResult(null);
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="">Select version</option>
+                {versions.map((version) => (
+                  <option key={version.metadata_version_id} value={version.metadata_version_id}>
+                    {version.version_label} — {version.project_id} — {version.sandbox_schema}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Drift Simulation</label>
+              <select
+                value={driftMode}
+                onChange={(event) => setDriftMode(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="no_drift">No Drift</option>
+                <option value="additive">Additive Drift — New columns added</option>
+                <option value="breaking">Breaking Drift — Missing/Renamed column</option>
+              </select>
+            </div>
+
+            <div className="flex items-end gap-3">
+              <Button onClick={validateDrift} disabled={validating} className="flex-1 rounded-xl">
+                {validating ? "Validating..." : "Validate Drift"}
+              </Button>
+              <Button variant="outline" onClick={fetchMetadataWorkspace} className="rounded-xl">
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {validationResult && (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-[13px] font-semibold text-slate-900">
+                      {validationResult.version_label} · {validationResult.project_id} · {validationResult.sandbox_schema}
+                    </p>
+                    <p className="mt-1 text-[13px] text-slate-600">{validationResult.validation.summary}</p>
+                  </div>
+                  <span className={`w-fit rounded-full px-3 py-1 text-[11px] font-medium ${statusBadgeClass(validationResult.validation.overall_status)}`}>
+                    {validationResult.validation.overall_status}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl bg-white p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Decision</p>
+                    <p className="mt-1 text-[13px] font-semibold text-slate-900">
+                      {validationResult.validation.can_run ? "Pipeline can continue" : "Pipeline requires intervention"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Drift Type</p>
+                    <p className="mt-1 text-[13px] font-semibold text-slate-900">{validationResult.validation.drift_type}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl bg-white p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mitigation Process</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] text-slate-600">
+                    {(validationResult.validation.mitigation || []).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {!validationResult.validation.can_run && (
+                  <div className="mt-4">
+                    <Button
+                      onClick={createSuccessorVersion}
+                      disabled={successorCreating}
+                      className="rounded-xl bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      {successorCreating ? "Creating Successor..." : "Create Successor Metadata Version"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-[13px]">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Table</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">New Columns</th>
+                      <th className="px-4 py-3">Missing/Renamed</th>
+                      <th className="px-4 py-3">Type Changes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {(validationResult.validation.tables || []).map((table) => (
+                      <tr key={table.table_name}>
+                        <td className="px-4 py-3 font-medium text-slate-900">{table.table_name}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusBadgeClass(table.status)}`}>
+                            {table.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{table.new_columns?.join(", ") || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{table.missing_columns?.join(", ") || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{table.type_changes?.length || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Saved Metadata Versions</h2>
+              <p className="text-[13px] text-slate-500">
+                Each row represents a project-specific metadata snapshot. New versions never overwrite previous versions.
+              </p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
+              {activeVersions} Active
+            </span>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <table className="w-full text-left text-[13px]">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Version</th>
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Sandbox Schema</th>
+                  <th className="px-4 py-3">Target</th>
+                  <th className="px-4 py-3">Tables</th>
+                  <th className="px-4 py-3">Columns</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {versions.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-6 text-center text-slate-500">
+                      No metadata versions created yet.
+                    </td>
+                  </tr>
+                ) : (
+                  versions.map((version) => (
+                    <tr key={version.metadata_version_id}>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{version.version_label}</td>
+                      <td className="px-4 py-3 text-slate-700">{version.project_id}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        <span className="block max-w-[260px] break-words font-medium">{version.sandbox_schema}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{version.target_environment}</td>
+                      <td className="px-4 py-3 text-slate-700">{version.table_count}</td>
+                      <td className="px-4 py-3 text-slate-700">{version.column_count}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${version.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                          {version.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SandboxManagerPage() {
+  const [sandboxes, setSandboxes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [owner, setOwner] = useState("person_A");
+  const [projectId, setProjectId] = useState("Project_001");
+  const [targetEnvironment, setTargetEnvironment] = useState("DEV");
+  const [selectedTablesText, setSelectedTablesText] = useState("patient_records, appointments");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const fetchSandboxes = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_BASE_URL}/sandboxes`);
+
+      if (response.data.status === "SUCCESS") {
+        setSandboxes(response.data.sandboxes || []);
+      }
+
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+      setError("Unable to load sandboxes from backend.");
+    }
+  };
+
+  useEffect(() => {
+    fetchSandboxes();
+  }, []);
+
+  const createSandbox = async () => {
+    setMessage("");
+    setError("");
+
+    if (!owner.trim()) {
+      setError("Please enter an owner.");
+      return;
+    }
+
+    if (!projectId.trim()) {
+      setError("Please enter a project ID.");
+      return;
+    }
+
+    const selectedTables = selectedTablesText
+      .split(",")
+      .map((table) => table.trim())
+      .filter(Boolean);
+
+    try {
+      setCreating(true);
+
+      const response = await axios.post(`${API_BASE_URL}/sandboxes`, {
+        owner: owner.trim(),
+        project_id: projectId.trim(),
+        target_environment: targetEnvironment,
+        source_system: "SQL Server PROD",
+        source_database: "DDB",
+        source_schema: "dbo",
+        selected_tables: selectedTables,
+      });
+
+      if (response.data.status === "SUCCESS") {
+        const sandbox = response.data.sandbox;
+        setMessage(`Created sandbox ${sandbox.sandbox_schema} for ${sandbox.owner}.`);
+        await fetchSandboxes();
+      } else {
+        setError(response.data.message || "Failed to create sandbox.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(
+        err.response?.data?.message ||
+          err.response?.data?.detail ||
+          err.message ||
+          "Failed to create sandbox."
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const totalSandboxes = sandboxes.length;
+  const totalTables = sandboxes.reduce(
+    (count, sandbox) => count + (sandbox.selected_tables?.length || 0),
+    0
+  );
+
+  const tableUsage = sandboxes.reduce((acc, sandbox) => {
+    (sandbox.selected_tables || []).forEach((table) => {
+      acc[table] = (acc[table] || 0) + 1;
+    });
+    return acc;
+  }, {});
+
+  const overlappingTables = Object.entries(tableUsage)
+    .filter(([, count]) => count > 1)
+    .map(([table]) => table);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Sandbox Manager"
+        description="Create and monitor isolated schema-level sandboxes for users and projects. Overlapping source tables remain isolated by sandbox schema."
+        icon={Layers}
+      />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          icon={Layers}
+          label="Sandboxes"
+          value={totalSandboxes}
+          helper="User/project schemas"
+        />
+        <MetricCard
+          icon={Database}
+          label="Registered Tables"
+          value={totalTables}
+          helper="Across all sandboxes"
+        />
+        <MetricCard
+          icon={Shield}
+          label="Overlapping Tables"
+          value={overlappingTables.length}
+          helper="Still isolated by schema"
+        />
+      </div>
+
+      <Card className="rounded-3xl border border-indigo-100 bg-white shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Create Sandbox</h2>
+              <p className="text-[13px] text-slate-500">
+                Create a separate working schema for each person or project.
+              </p>
+            </div>
+            <span className="inline-flex w-fit items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700">
+Required · Schema-Level Isolation
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Owner</label>
+              <input
+                value={owner}
+                onChange={(event) => setOwner(event.target.value)}
+                placeholder="person_A"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Project ID</label>
+              <input
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                placeholder="Project_001"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Target Environment</label>
+              <select
+                value={targetEnvironment}
+                onChange={(event) => setTargetEnvironment(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="DEV">DEV</option>
+                <option value="QA">QA</option>
+                <option value="REGRESSION">REGRESSION</option>
+                <option value="UAT">UAT</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Tables</label>
+              <input
+                value={selectedTablesText}
+                onChange={(event) => setSelectedTablesText(event.target.value)}
+                placeholder="patient_records, appointments"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button onClick={createSandbox} disabled={creating} className="rounded-xl">
+              {creating ? "Creating..." : "Create Sandbox"}
+            </Button>
+            <Button variant="outline" onClick={fetchSandboxes} className="rounded-xl">
+              Refresh
+            </Button>
+          </div>
+
+          {message && (
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              {message}
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+              {error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Existing Sandboxes</h2>
+              <p className="text-[13px] text-slate-500">
+                Each sandbox has its own schema, owner, project, tables, and isolation boundary.
+              </p>
+            </div>
+            <Button variant="outline" onClick={fetchSandboxes} className="rounded-xl">
+              Refresh Sandboxes
+            </Button>
+          </div>
+
+          {loading && <p className="mt-5 text-[13px] text-slate-500">Loading sandboxes...</p>}
+
+          {!loading && sandboxes.length === 0 && (
+            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-[13px] text-slate-600">
+              No sandboxes found. Create one here or from Create Pipeline → Source.
+            </div>
+          )}
+
+          {!loading && sandboxes.length > 0 && (
+            <div className="mt-6 grid gap-4">
+              {sandboxes.map((sandbox) => {
+                const overlappingForSandbox = (sandbox.selected_tables || []).filter((table) =>
+                  overlappingTables.includes(table)
+                );
+
+                return (
+                  <div key={sandbox.sandbox_id} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-900 break-all leading-snug">{sandbox.sandbox_schema}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Owner: {sandbox.owner} · Project: {sandbox.project_id} · Target: {sandbox.target_environment}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Source: {sandbox.source_system} → {sandbox.source_database} → {sandbox.source_schema}
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
+                        {sandbox.isolation_status || "ISOLATED"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(sandbox.selected_tables || []).length === 0 ? (
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+                          No tables registered
+                        </span>
+                      ) : (
+                        sandbox.selected_tables.map((table) => (
+                          <span
+                            key={table}
+                            className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+                              overlappingTables.includes(table)
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {table}
+                            {overlappingTables.includes(table) ? " · overlap" : ""}
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    {overlappingForSandbox.length > 0 && (
+                      <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[11px] text-amber-800">
+                        Overlap detected for {overlappingForSandbox.join(", ")}. This is allowed because changes are scoped to this sandbox schema.
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+function EnterpriseBlueprintMetrics() {
+  const totalDomains = blueprintWorkspaces.reduce((sum, workspace) => sum + workspace.domains.length, 0);
+  const sourceAssets = blueprintWorkspaces.reduce(
+    (sum, workspace) => sum + workspace.domains.reduce((inner, domain) => inner + domain.tables.length, 0),
+    0
+  );
+  const activePipelines = blueprintPipelines.length;
+  const maskedAssets = maskedAssetSamples.length;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-4">
+      <MetricCard icon={Briefcase} label="Workspaces" value={blueprintWorkspaces.length} helper={`${totalDomains} business domains`} />
+      <MetricCard icon={Database} label="Source Assets" value={sourceAssets} helper="Tables across domains" />
+      <MetricCard icon={Shield} label="Masked Assets" value={maskedAssets} helper="Sandbox-scoped outputs" />
+      <MetricCard icon={Activity} label="Pipelines" value={activePipelines} helper="Editable configurations" />
+    </div>
+  );
+}
+
+function WorkspacesPage() {
+  const [workspaces, setWorkspaces] = useState(blueprintWorkspaces);
+  const [selectedWorkspaceName, setSelectedWorkspaceName] = useState(blueprintWorkspaces[0]?.name || "");
+  const [sandboxes, setSandboxes] = useState([]);
+  const [loadingSandboxes, setLoadingSandboxes] = useState(false);
+  const [workspaceMessage, setWorkspaceMessage] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [showExistingWorkspaceDetails, setShowExistingWorkspaceDetails] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newWorkspaceCreatedBy, setNewWorkspaceCreatedBy] = useState("Admin User");
+  const [newWorkspaceDescription, setNewWorkspaceDescription] = useState("");
+  const [newWorkspaceOwner, setNewWorkspaceOwner] = useState("");
+  const [newWorkspaceEnvironment, setNewWorkspaceEnvironment] = useState("Dev");
+  const [openDomainKeys, setOpenDomainKeys] = useState({});
+  const [openSandboxIds, setOpenSandboxIds] = useState({});
+
+  const selectedWorkspace =
+    workspaces.find((workspace) => workspace.name === selectedWorkspaceName) ||
+    workspaces[0];
+
+  const fetchSandboxes = async () => {
+    try {
+      setLoadingSandboxes(true);
+      const response = await axios.get(`${API_BASE_URL}/sandboxes`);
+
+      if (response.data.status === "SUCCESS") {
+        setSandboxes(response.data.sandboxes || []);
+      }
+    } catch (err) {
+      console.error(err);
+      setWorkspaceError("Unable to load sandbox schemas from backend.");
+    } finally {
+      setLoadingSandboxes(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSandboxes();
+  }, []);
+
+  const resetCreateWorkspaceForm = () => {
+    setNewWorkspaceName("");
+    setNewWorkspaceCreatedBy("Admin User");
+    setNewWorkspaceDescription("");
+    setNewWorkspaceOwner("");
+    setNewWorkspaceEnvironment("Dev");
+  };
+
+  const createWorkspace = () => {
+    setWorkspaceMessage("");
+    setWorkspaceError("");
+
+    const workspaceName = newWorkspaceName.trim();
+
+    if (!workspaceName) {
+      setWorkspaceError("Please enter a workspace name.");
+      return;
+    }
+
+    if (workspaces.some((workspace) => workspace.name.toLowerCase() === workspaceName.toLowerCase())) {
+      setWorkspaceError("A workspace with this name already exists.");
+      return;
+    }
+
+    const workspace = {
+      name: workspaceName,
+      owner: newWorkspaceOwner.trim() || newWorkspaceCreatedBy.trim() || "Admin User",
+      createdBy: newWorkspaceCreatedBy.trim() || "Admin User",
+      date: new Date().toISOString().slice(0, 10),
+      environment: newWorkspaceEnvironment,
+      description:
+        newWorkspaceDescription.trim() ||
+        "Workspace created for source metadata, sandbox schemas, masked outputs, and pipeline execution.",
+      status: "Active",
+      domains: [],
+      pipelines: [],
+    };
+
+    setWorkspaces((current) => [workspace, ...current]);
+    setSelectedWorkspaceName(workspace.name);
+    setShowExistingWorkspaceDetails(true);
+    setWorkspaceMessage(`Workspace ${workspace.name} created successfully.`);
+    setIsCreateOpen(false);
+    resetCreateWorkspaceForm();
+  };
+
+  const toggleDomain = (domainName) => {
+    const key = `${selectedWorkspace?.name || "workspace"}-${domainName}`;
+    setOpenDomainKeys((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  };
+
+  const isDomainOpen = (domainName) => {
+    const key = `${selectedWorkspace?.name || "workspace"}-${domainName}`;
+    return Boolean(openDomainKeys[key]);
+  };
+
+  const toggleSandbox = (sandboxId) => {
+    setOpenSandboxIds((current) => ({
+      ...current,
+      [sandboxId]: !current[sandboxId],
+    }));
+  };
+
+  const expandAllSandboxes = () => {
+    const updated = {};
+    sandboxes.forEach((sandbox) => {
+      updated[sandbox.sandbox_id] = true;
+    });
+    setOpenSandboxIds(updated);
+  };
+
+  const collapseAllSandboxes = () => {
+    setOpenSandboxIds({});
+  };
+
+  const totalDomains = workspaces.reduce((sum, workspace) => sum + workspace.domains.length, 0);
+  const sourceAssets = workspaces.reduce(
+    (sum, workspace) => sum + workspace.domains.reduce((inner, domain) => inner + domain.tables.length, 0),
+    0
+  );
+  const maskedAssets = maskedAssetSamples.length;
+  const totalSandboxTables = sandboxes.reduce(
+    (count, sandbox) => count + (sandbox.selected_tables?.length || 0),
+    0
+  );
+
+  const tableUsage = sandboxes.reduce((acc, sandbox) => {
+    (sandbox.selected_tables || []).forEach((table) => {
+      acc[table] = (acc[table] || 0) + 1;
+    });
+    return acc;
+  }, {});
+
+  const overlappingTables = Object.entries(tableUsage)
+    .filter(([, count]) => count > 1)
+    .map(([table]) => table);
+
+  const environmentOptions = ["Dev", "UAT", "Production", "Sandbox"];
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Workspace"
+        description="One business container for domains, source assets, sandbox schemas, masked outputs, metadata versions, and pipelines."
+        icon={Briefcase}
+      />
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <MetricCard icon={Briefcase} label="Workspaces" value={workspaces.length} helper={`${totalDomains} business domains`} />
+        <MetricCard icon={Database} label="Source Assets" value={sourceAssets} helper="Tables across domains" />
+        <MetricCard icon={Layers} label="Sandbox Schemas" value={sandboxes.length} helper={`${totalSandboxTables} registered tables`} />
+        <MetricCard icon={Shield} label="Masked Assets" value={maskedAssets} helper="Sandbox-scoped outputs" />
+      </div>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-4">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Workspace Catalog</h2>
+              <p className="text-xs text-slate-500">
+                Create a new workspace or open an existing workspace to view domains and sandbox schemas.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowExistingWorkspaceDetails((current) => !current)}
+                className="rounded-xl px-3 py-2 text-xs"
+              >
+                {showExistingWorkspaceDetails ? "Hide Existing Workspace" : "Existing Workspace"}
+              </Button>
+              <Button onClick={() => setIsCreateOpen(true)} className="rounded-xl px-3 py-2 text-xs">
+                + Create Workspace
+              </Button>
+            </div>
+          </div>
+
+          {workspaceMessage && (
+            <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {workspaceMessage}
+            </div>
+          )}
+
+          {workspaceError && (
+            <div className="mb-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {workspaceError}
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[920px] text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2.5">Workspace Name</th>
+                  <th className="px-3 py-2.5">Created By</th>
+                  <th className="px-3 py-2.5">Environment</th>
+                  <th className="px-3 py-2.5">Description</th>
+                  <th className="px-3 py-2.5">Domains</th>
+                  <th className="px-3 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {workspaces.map((workspace) => (
+                  <tr
+                    key={workspace.name}
+                    onClick={() => {
+                      setSelectedWorkspaceName(workspace.name);
+                      setShowExistingWorkspaceDetails(true);
+                    }}
+                    className={`cursor-pointer ${selectedWorkspace?.name === workspace.name ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                  >
+                    <td className="px-3 py-2.5 font-semibold text-slate-900">{workspace.name}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{workspace.createdBy || workspace.owner}</td>
+                    <td className="px-3 py-2.5">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-700">
+                        {workspace.environment}
+                      </span>
+                    </td>
+                    <td className="max-w-[360px] px-3 py-2.5 text-slate-600">
+                      <span className="line-clamp-2">{workspace.description}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-600">{workspace.domains.length}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${workspace.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                        {workspace.status || "Active"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {!showExistingWorkspaceDetails && (
+        <Card className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Existing workspace details are collapsed</h3>
+                <p className="text-xs text-slate-500">
+                  Select a workspace row or click Existing Workspace to view domains, source tables, sandbox schemas, overlaps, and linked pipelines.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowExistingWorkspaceDetails(true)}
+                className="w-fit rounded-xl px-3 py-2 text-xs"
+              >
+                Open Existing Workspace
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedWorkspace && showExistingWorkspaceDetails && (
+        <div className="grid min-w-0 gap-4 2xl:grid-cols-[0.95fr_1.05fr]">
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="p-4">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">{selectedWorkspace.name}</h2>
+                  <p className="text-xs text-slate-500">Domains, source tables, masked assets, and linked pipelines.</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
+                  {selectedWorkspace.status || "Active"}
+                </span>
+              </div>
+
+              {selectedWorkspace.domains.length === 0 ? (
+                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                  No domains imported yet. Use Source Connections and Data Assets to onboard metadata into this workspace.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {selectedWorkspace.domains.map((domain) => {
+                    const open = isDomainOpen(domain.name);
+                    return (
+                      <div key={domain.name} className="rounded-xl border border-slate-200 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => toggleDomain(domain.name)}
+                          className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-slate-50"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-slate-900">{domain.name}</p>
+                              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-medium text-blue-700">
+                                {domain.tables.length} tables
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate text-xs text-slate-500">Masked asset: {domain.asset}</p>
+                          </div>
+                          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+                        </button>
+
+                        {open && (
+                          <div className="border-t border-slate-100 px-3.5 py-3">
+                            <div>
+                              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Source Tables</p>
+                              <div className="flex flex-wrap gap-2">
+                                {domain.tables.map((table) => (
+                                  <span key={table} className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-700">
+                                    {table}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                              <span className="font-medium text-slate-800">Pipelines:</span> {domain.pipelines.join(", ")}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="p-4">
+              <div className="mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Sandbox Schemas</h2>
+                  <p className="max-w-xl text-xs leading-5 text-slate-500">
+                    Isolated user/project schemas. Expand only when table details are needed.
+                  </p>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={fetchSandboxes} className="rounded-xl px-3 py-1.5 text-xs">
+                    Refresh
+                  </Button>
+                  {sandboxes.length > 0 && (
+                    <>
+                      <Button variant="outline" onClick={expandAllSandboxes} className="rounded-xl px-3 py-1.5 text-xs">
+                        Expand All
+                      </Button>
+                      <Button variant="outline" onClick={collapseAllSandboxes} className="rounded-xl px-3 py-1.5 text-xs">
+                        Collapse All
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {loadingSandboxes && <p className="text-xs text-slate-500">Loading sandbox schemas...</p>}
+
+              {!loadingSandboxes && sandboxes.length === 0 && (
+                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                  No sandbox schemas found. Create one from Pipeline Workspace → Sandbox & Source.
+                </div>
+              )}
+
+              {!loadingSandboxes && sandboxes.length > 0 && (
+                <div className="space-y-2.5">
+                  {sandboxes.map((sandbox) => {
+                    const open = Boolean(openSandboxIds[sandbox.sandbox_id]);
+                    const selectedTables = sandbox.selected_tables || [];
+                    const overlappingForSandbox = selectedTables.filter((table) =>
+                      overlappingTables.includes(table)
+                    );
+
+                    return (
+                      <div key={sandbox.sandbox_id} className="rounded-xl border border-slate-200 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => toggleSandbox(sandbox.sandbox_id)}
+                          className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-slate-50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="max-w-full break-words text-xs font-semibold leading-snug text-slate-900">
+                                {sandbox.sandbox_schema}
+                              </p>
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
+                                {sandbox.isolation_status || "ISOLATED"}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {sandbox.owner} · {sandbox.project_id} · {sandbox.target_environment}
+                            </p>
+                          </div>
+
+                          <div className="hidden shrink-0 items-center gap-2 md:flex">
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-600">
+                              {selectedTables.length} tables
+                            </span>
+                            {overlappingForSandbox.length > 0 && (
+                              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-medium text-amber-700">
+                                {overlappingForSandbox.length} overlaps
+                              </span>
+                            )}
+                          </div>
+
+                          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+                        </button>
+
+                        {open && (
+                          <div className="border-t border-slate-100 px-3.5 py-3">
+                            <div className="grid gap-3 text-xs md:grid-cols-3">
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Owner</p>
+                                <p className="mt-1 font-medium text-slate-800">{sandbox.owner}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Project / Target</p>
+                                <p className="mt-1 font-medium text-slate-800">{sandbox.project_id} · {sandbox.target_environment}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Source</p>
+                                <p className="mt-1 font-medium text-slate-800">{sandbox.source_system} → {sandbox.source_database} → {sandbox.source_schema}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-3">
+                              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Registered Tables</p>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedTables.length === 0 ? (
+                                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-600">
+                                    No tables registered
+                                  </span>
+                                ) : (
+                                  selectedTables.map((table) => (
+                                    <span
+                                      key={table}
+                                      className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                                        overlappingTables.includes(table)
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-slate-100 text-slate-600"
+                                      }`}
+                                    >
+                                      {table}
+                                      {overlappingTables.includes(table) ? " · overlap" : ""}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+
+                            {overlappingForSandbox.length > 0 && (
+                              <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                                Overlap detected for {overlappingForSandbox.join(", ")}. This is allowed because changes are scoped to this sandbox schema.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">Create Workspace</h2>
+                <p className="mt-1 text-[13px] text-slate-500">
+                  Create the business container that will hold sandbox schemas, metadata, rules, pipelines, and outputs.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(false)}
+                className="rounded-2xl bg-slate-100 p-3 text-slate-600 hover:bg-slate-200"
+                aria-label="Close create workspace modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-[13px] font-semibold text-slate-700">Workspace Name</label>
+                <input
+                  value={newWorkspaceName}
+                  onChange={(event) => setNewWorkspaceName(event.target.value)}
+                  placeholder="e.g., Finance QA Workspace"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[13px] font-semibold text-slate-700">Created By</label>
+                <input
+                  value={newWorkspaceCreatedBy}
+                  onChange={(event) => setNewWorkspaceCreatedBy(event.target.value)}
+                  placeholder="Admin User"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-[13px] font-semibold text-slate-700">Description</label>
+                <textarea
+                  value={newWorkspaceDescription}
+                  onChange={(event) => setNewWorkspaceDescription(event.target.value)}
+                  placeholder="Purpose, environment, business domain and data scope"
+                  className="min-h-[120px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[13px] font-semibold text-slate-700">Business Owner</label>
+                <input
+                  value={newWorkspaceOwner}
+                  onChange={(event) => setNewWorkspaceOwner(event.target.value)}
+                  placeholder="Owner name"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[13px] font-semibold text-slate-700">Environment</label>
+                <select
+                  value={newWorkspaceEnvironment}
+                  onChange={(event) => setNewWorkspaceEnvironment(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                >
+                  {environmentOptions.map((environment) => (
+                    <option key={environment} value={environment}>{environment}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-5">
+              <Button variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button onClick={createWorkspace} className="rounded-xl">
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceConnectionsPage() {
+  const [connections, setConnections] = useState(blueprintConnections);
+  const [connectionName, setConnectionName] = useState("SQL_NEW_SOURCE");
+  const [connectionType, setConnectionType] = useState("SQL Server");
+  const [connectionStatus, setConnectionStatus] = useState("");
+
+  const addConnection = () => {
+    const newConnection = {
+      name: connectionName || "SQL_NEW_SOURCE",
+      type: connectionType,
+      sourceType: connectionType === "SFTP" ? "File" : "DB",
+      connection: connectionType === "SFTP" ? "sftp://feeds.company.com/inbound" : "server.company.com:1433/DDB",
+      status: "Draft",
+      purpose: "New connection created from UI simulation",
+    };
+
+    setConnections((current) => [newConnection, ...current]);
+    setConnectionStatus(`Connection ${newConnection.name} added as Draft.`);
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Source Connections"
+        description="Enterprise-style connection catalog for source and target systems used by TDM pipelines."
+        icon={Plug}
+      />
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Create Connection</h2>
+              <p className="text-[13px] text-slate-500">Simulates connection onboarding before metadata import.</p>
+            </div>
+            <span className="rounded-full bg-purple-50 px-3 py-1 text-[11px] font-medium text-purple-700">Connection Manager</span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[1fr_220px_auto] md:items-end">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Connection Name</label>
+              <input
+                value={connectionName}
+                onChange={(event) => setConnectionName(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Database / Source Type</label>
+              <select
+                value={connectionType}
+                onChange={(event) => setConnectionType(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              >
+                <option>SQL Server</option>
+                <option>Databricks</option>
+                <option>Oracle</option>
+                <option>SFTP</option>
+                <option>Salesforce</option>
+              </select>
+            </div>
+            <Button onClick={addConnection} className="rounded-xl">Add Connection</Button>
+          </div>
+
+          {connectionStatus && (
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              {connectionStatus}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <h2 className="text-base font-semibold text-slate-900">Connection Catalog</h2>
+          <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[900px] text-left text-[13px]">
+              <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Connection</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Source Type</th>
+                  <th className="px-4 py-3">Connection String</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {connections.map((connection) => (
+                  <tr key={connection.name}>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{connection.name}</td>
+                    <td className="px-4 py-3 text-slate-600">{connection.type}</td>
+                    <td className="px-4 py-3 text-slate-600">{connection.sourceType}</td>
+                    <td className="px-4 py-3 text-slate-600">{connection.connection}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${connection.status === "Connected" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                        {connection.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Button variant="outline" className="rounded-xl" onClick={() => setConnectionStatus(`Connection test successful for ${connection.name}.`)}>
+                        Test
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ExistingPipelinesPage() {
+  const [pipelines, setPipelines] = useState(blueprintPipelines);
+  const [selectedPipelineName, setSelectedPipelineName] = useState(blueprintPipelines[0].name);
+  const [message, setMessage] = useState("");
+
+  const selectedPipeline = pipelines.find((pipeline) => pipeline.name === selectedPipelineName) || pipelines[0];
+  const availableTables = [
+    "patient_records",
+    "appointments",
+    "insurance_claims",
+    "customer_profile",
+    "customer_contact",
+    "doctor_reference",
+  ];
+
+  const toggleTable = (tableName) => {
+    setPipelines((current) =>
+      current.map((pipeline) => {
+        if (pipeline.name !== selectedPipeline.name) return pipeline;
+
+        const alreadySelected = pipeline.tables.includes(tableName);
+        return {
+          ...pipeline,
+          tables: alreadySelected
+            ? pipeline.tables.filter((table) => table !== tableName)
+            : [...pipeline.tables, tableName],
+        };
+      })
+    );
+  };
+
+  const updatePipelineField = (field, value) => {
+    setPipelines((current) =>
+      current.map((pipeline) =>
+        pipeline.name === selectedPipeline.name ? { ...pipeline, [field]: value } : pipeline
+      )
+    );
+  };
+
+  const savePipeline = () => {
+    setMessage(`Saved ${selectedPipeline.name}. ${selectedPipeline.tables.length} table(s) are now selected.`);
+  };
+
+  const duplicatePipeline = () => {
+    const copyName = `${selectedPipeline.name}_Copy`;
+    const copiedPipeline = {
+      ...selectedPipeline,
+      name: copyName,
+      status: "Draft",
+      lastRun: "Not executed yet",
+    };
+    setPipelines((current) => [copiedPipeline, ...current]);
+    setSelectedPipelineName(copyName);
+    setMessage(`Duplicated pipeline as ${copyName}.`);
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Existing Pipelines"
+        description="Open saved pipelines, update source/target mappings, select or unselect tables, and preserve reusable configurations."
+        icon={History}
+      />
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Pipeline Catalog</h2>
+              <p className="text-[13px] text-slate-500">Click a pipeline to edit its configuration.</p>
+            </div>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700">Editable</span>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[960px] text-left text-[13px]">
+              <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Pipeline</th>
+                  <th className="px-4 py-3">Workspace</th>
+                  <th className="px-4 py-3">Sandbox</th>
+                  <th className="px-4 py-3">Source</th>
+                  <th className="px-4 py-3">Target</th>
+                  <th className="px-4 py-3">Tables</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pipelines.map((pipeline) => (
+                  <tr
+                    key={pipeline.name}
+                    onClick={() => setSelectedPipelineName(pipeline.name)}
+                    className={`cursor-pointer ${selectedPipeline.name === pipeline.name ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                  >
+                    <td className="px-4 py-3 font-semibold text-slate-900">{pipeline.name}</td>
+                    <td className="px-4 py-3 text-slate-600">{pipeline.workspace}</td>
+                    <td className="px-4 py-3 text-slate-600">{pipeline.sandbox}</td>
+                    <td className="px-4 py-3 text-slate-600">{pipeline.source}</td>
+                    <td className="px-4 py-3 text-slate-600">{pipeline.target}</td>
+                    <td className="px-4 py-3 text-slate-600">{pipeline.tables.length}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">{pipeline.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Edit Pipeline: {selectedPipeline.name}</h2>
+              <p className="text-[13px] text-slate-500">Change mappings and table selection without touching other sandbox configurations.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="rounded-xl" onClick={duplicatePipeline}>Duplicate</Button>
+              <Button className="rounded-xl" onClick={savePipeline}>Save Changes</Button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Workspace</label>
+              <select
+                value={selectedPipeline.workspace}
+                onChange={(event) => updatePipelineField("workspace", event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              >
+                {blueprintWorkspaces.map((workspace) => <option key={workspace.name}>{workspace.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Source</label>
+              <select
+                value={selectedPipeline.source}
+                onChange={(event) => updatePipelineField("source", event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              >
+                {blueprintConnections.map((connection) => <option key={connection.name}>{connection.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Target</label>
+              <select
+                value={selectedPipeline.target}
+                onChange={(event) => updatePipelineField("target", event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              >
+                {blueprintConnections.map((connection) => <option key={connection.name}>{connection.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">Status</label>
+              <select
+                value={selectedPipeline.status}
+                onChange={(event) => updatePipelineField("status", event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none"
+              >
+                <option>Draft</option>
+                <option>Ready</option>
+                <option>In Review</option>
+                <option>Active</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-[13px] font-semibold text-slate-900">Select / Unselect Tables</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {availableTables.map((tableName) => (
+                <label key={tableName} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-[13px] text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedPipeline.tables.includes(tableName)}
+                    onChange={() => toggleTable(tableName)}
+                  />
+                  <span>{tableName}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {message && (
+            <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              {message}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MaskedAssetsPage({ currentJobId }) {
+  const [selectedAsset, setSelectedAsset] = useState(maskedAssetSamples[0]);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Masked Data Assets"
+        description="Browse masked outputs by workspace, sandbox schema, table group, and readiness status."
+        icon={TableProperties}
+      />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard icon={Shield} label="Masked Assets" value={maskedAssetSamples.length} helper="Cataloged outputs" />
+        <MetricCard icon={Layers} label="Sandbox Scoped" value="100%" helper="Isolated by schema" />
+        <MetricCard icon={CheckCircle2} label="Ready Assets" value={maskedAssetSamples.filter((asset) => asset.status === "Ready").length} helper="Available to testers" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
+        <Card className="rounded-2xl shadow-sm">
+          <CardContent className="p-6">
+            <h2 className="text-base font-semibold text-slate-900">Masked Asset Catalog</h2>
+            <div className="mt-5 space-y-3">
+              {maskedAssetSamples.map((asset) => (
+                <button
+                  key={asset.asset}
+                  type="button"
+                  onClick={() => setSelectedAsset(asset)}
+                  className={`w-full rounded-2xl border p-4 text-left transition ${selectedAsset.asset === asset.asset ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{asset.asset}</p>
+                      <p className="mt-1 break-all text-[11px] text-slate-500">{asset.sandbox}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-medium text-emerald-700">{asset.status}</span>
+                  </div>
+                  <p className="mt-2 text-[13px] text-slate-600">{asset.tables.length} tables · {asset.rows} rows</p>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl shadow-sm">
+          <CardContent className="p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">{selectedAsset.asset}</h2>
+                <p className="text-[13px] text-slate-500">Preview masked data asset details and table coverage.</p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">Masked Ready</span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium text-slate-500">Workspace</p>
+                <p className="mt-1 font-semibold text-slate-900">{selectedAsset.workspace}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium text-slate-500">Sandbox Schema</p>
+                <p className="mt-1 break-all font-semibold text-slate-900">{selectedAsset.sandbox}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium text-slate-500">Rows</p>
+                <p className="mt-1 font-semibold text-slate-900">{selectedAsset.rows}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium text-slate-500">Isolation</p>
+                <p className="mt-1 font-semibold text-slate-900">ISOLATED</p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-[13px] font-semibold text-slate-900">Tables</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedAsset.tables.map((table) => (
+                  <span key={table} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">{table}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full min-w-[640px] text-left text-[13px]">
+                <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                  <tr><th className="px-4 py-3">patient_id</th><th className="px-4 py-3">first_name</th><th className="px-4 py-3">ssn</th><th className="px-4 py-3">email</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[1, 2, 3, 4].map((index) => (
+                    <tr key={index}>
+                      <td className="px-4 py-3">a4e76f{index}</td>
+                      <td className="px-4 py-3">FakeName{index}</td>
+                      <td className="px-4 py-3">10*****0{index}</td>
+                      <td className="px-4 py-3">masked{index}@example.com</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {currentJobId && (
+        <Card className="rounded-2xl shadow-sm">
+          <CardContent className="p-6">
+            <h2 className="text-base font-semibold text-slate-900">Latest Executed Job Review</h2>
+            <div className="mt-5">
+              <ReviewStep jobId={currentJobId} selectedDatasets={[]} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function PlaceholderPage({ title, description, icon: Icon, items = [] }) {
   return (
     <div className="space-y-6">
@@ -661,8 +2620,8 @@ function PlaceholderPage({ title, description, icon: Icon, items = [] }) {
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <h2 className="text-lg font-semibold text-slate-900">Blueprint Page</h2>
-          <p className="mt-2 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-slate-900">Blueprint Page</h2>
+          <p className="mt-2 text-[13px] text-slate-500">
             This page is part of the realistic enterprise blueprint. The UI shell is ready;
             detailed backend logic can be connected next.
           </p>
@@ -670,7 +2629,7 @@ function PlaceholderPage({ title, description, icon: Icon, items = [] }) {
           {items.length > 0 && (
             <div className="mt-6 grid gap-3 md:grid-cols-2">
               {items.map((item) => (
-                <div key={item} className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                <div key={item} className="rounded-2xl bg-slate-50 p-4 text-[13px] text-slate-700">
                   {item}
                 </div>
               ))}
@@ -712,7 +2671,7 @@ function WorkflowProgress({ activeStep }) {
               return (
                 <div key={stage.label} className="flex flex-col items-center text-center">
                   <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-[13px] font-semibold ${
                       status === "completed"
                         ? "bg-emerald-600 text-white"
                         : status === "active"
@@ -722,7 +2681,7 @@ function WorkflowProgress({ activeStep }) {
                   >
                     {status === "completed" ? "✓" : index + 1}
                   </div>
-                  <p className={`mt-2 text-xs font-medium ${status === "active" ? "text-slate-900" : "text-slate-500"}`}>
+                  <p className={`mt-2 text-[11px] font-medium ${status === "active" ? "text-slate-900" : "text-slate-500"}`}>
                     {stage.label}
                   </p>
                 </div>
@@ -765,7 +2724,7 @@ function Stepper({ activeStep }) {
               <Icon className="h-5 w-5" />
               {isDone && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
             </div>
-            <p className="mt-3 text-sm font-medium">{step.label}</p>
+            <p className="mt-3 text-[13px] font-medium">{step.label}</p>
           </div>
         );
       })}
@@ -781,7 +2740,14 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
   const [uploadError, setUploadError] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState(null);
   const [selectedDatasetIdLocal, setSelectedDatasetIdLocal] = useState("");
-
+  const [sandboxes, setSandboxes] = useState([]);
+  const [selectedSandboxId, setSelectedSandboxId] = useState("");
+  const [sandboxOwner, setSandboxOwner] = useState("");
+  const [sandboxProjectId, setSandboxProjectId] = useState("");
+  const [sandboxTargetEnvironment, setSandboxTargetEnvironment] = useState("DEV");
+  const [sandboxMessage, setSandboxMessage] = useState("");
+  const [sandboxError, setSandboxError] = useState("");
+  const [sandboxCreating, setSandboxCreating] = useState(false);
   const [sourceDatabases, setSourceDatabases] = useState([]);
   const [selectedSourceDatabase, setSelectedSourceDatabase] = useState("");
   const [sourceTables, setSourceTables] = useState([]);
@@ -791,6 +2757,73 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
   const [sourceRowCount, setSourceRowCount] = useState(100);
   const [rowCountByTable, setRowCountByTable] = useState({});
   const [sourceGenerating, setSourceGenerating] = useState(false);
+  const [deletingDatasetId, setDeletingDatasetId] = useState("");
+
+  const createSandbox = async () => {
+  setSandboxMessage("");
+  setSandboxError("");
+
+  if (!sandboxOwner.trim()) {
+    setSandboxError("Please enter sandbox owner.");
+    return;
+  }
+
+  if (!sandboxProjectId.trim()) {
+    setSandboxError("Please enter project ID.");
+    return;
+  }
+
+  try {
+    setSandboxCreating(true);
+
+    const response = await axios.post(`${API_BASE_URL}/sandboxes`, {
+      owner: sandboxOwner.trim(),
+      project_id: sandboxProjectId.trim(),
+      target_environment: sandboxTargetEnvironment,
+      source_system: "SQL Server PROD",
+      source_database: "DDB",
+      source_schema: "dbo",
+      selected_tables: selectedSourceTables,
+    });
+
+    if (response.data.status === "SUCCESS") {
+      const sandbox = response.data.sandbox;
+
+      setSandboxMessage(
+        `Sandbox created: ${sandbox.sandbox_schema}. Isolation status: ${sandbox.isolation_status}`
+      );
+
+      setSelectedSandboxId(sandbox.sandbox_id);
+      await fetchSandboxes();
+      await fetchDatasets();
+    } else {
+      setSandboxError(response.data.message || "Failed to create sandbox.");
+    }
+  } catch (error) {
+  console.error("Sandbox create error:", error);
+
+  setSandboxError(
+    error.response?.data?.message ||
+      error.response?.data?.detail ||
+      error.message ||
+      "Failed to create sandbox."
+  );
+} finally {
+    setSandboxCreating(false);
+  }
+};
+
+  const fetchSandboxes = async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/sandboxes`);
+
+    if (response.data.status === "SUCCESS") {
+      setSandboxes(response.data.sandboxes || []);
+    }
+  } catch (error) {
+    console.error("Failed to fetch sandboxes", error);
+  }
+};
 
   const fetchDatasets = async () => {
     try {
@@ -844,13 +2877,69 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
   useEffect(() => {
     fetchDatasets();
     fetchSourceDatabases();
+    fetchSandboxes();
   }, []);
+
+  const getSelectedSandbox = () =>
+    sandboxes.find((sandbox) => sandbox.sandbox_id === selectedSandboxId);
+
+  const getSelectedSandboxMetadata = () => {
+    const selectedSandbox = getSelectedSandbox();
+
+    if (!selectedSandbox) {
+      return {};
+    }
+
+    return {
+      sandbox_id: selectedSandbox.sandbox_id,
+      sandbox_schema: selectedSandbox.sandbox_schema,
+      sandbox_owner: selectedSandbox.owner,
+      project_id: selectedSandbox.project_id,
+      target_environment: selectedSandbox.target_environment,
+      isolation_status: selectedSandbox.isolation_status || "ISOLATED",
+    };
+  };
+
+  const handleSandboxChange = async (sandboxId) => {
+    setSelectedSandboxId(sandboxId);
+    setUploadMessage(null);
+    setUploadError(null);
+
+    if (!sandboxId) {
+      setSelectedDatasetIdLocal("");
+      setSelectedFileName(null);
+      return;
+    }
+
+    const selectedSandbox = sandboxes.find(
+      (sandbox) => sandbox.sandbox_id === sandboxId
+    );
+
+    if (selectedSandbox?.selected_tables?.length) {
+      setSelectedSourceTables(selectedSandbox.selected_tables);
+
+      selectedSandbox.selected_tables.forEach((tableName) => {
+        setRowCountByTable((current) => ({
+          ...current,
+          [tableName]: current[tableName] || sourceRowCount,
+        }));
+
+        if (selectedSourceDatabase && !sourceColumnsByTable[tableName]) {
+          fetchColumnsForTable(selectedSourceDatabase, tableName);
+        }
+      });
+    }
+
+    await fetchDatasets();
+  };
 
   const handleDatasetReady = (responseData, displayName) => {
     setSelectedFileName(displayName);
     setSelectedDatasetIdLocal(responseData.dataset_id);
 
     onDatasetUploaded({
+      ...responseData,
+      ...getSelectedSandboxMetadata(),
       datasetId: responseData.dataset_id,
       filename: displayName,
       columns: Array.isArray(responseData.columns) ? responseData.columns : sampleColumns,
@@ -875,7 +2964,17 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
     setUploadMessage(`Selected existing dataset: ${selectedDataset.filename}`);
     setUploadError(null);
 
+    if (selectedDataset.sandbox_id) {
+      setSelectedSandboxId(selectedDataset.sandbox_id);
+    }
+
+    const sandboxMetadata = selectedDataset.sandbox_id
+      ? {}
+      : getSelectedSandboxMetadata();
+
     onDatasetUploaded({
+      ...selectedDataset,
+      ...sandboxMetadata,
       datasetId: selectedDataset.dataset_id,
       filename: selectedDataset.filename,
       columns: Array.isArray(selectedDataset.columns)
@@ -1009,6 +3108,12 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
       setUploadError(null);
       setUploadMessage(null);
 
+      if (!selectedSandboxId) {
+        setSourceGenerating(false);
+        setUploadError("Please create or select a sandbox before generating source-based test data.");
+        return;
+      }
+
       const selectedTablesPayload = selectedSourceTables.map((tableName) => ({
         table_name: tableName,
         selected_columns: selectedColumnsByTable[tableName] || [],
@@ -1028,11 +3133,11 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
       const response = await axios.post(
         "http://127.0.0.1:8000/generate-test-data-from-source",
         {
-          source: "databricks",
-          database: selectedSourceDatabase,
-          tables: selectedTablesPayload,
-          
-        }
+        source: "databricks",
+        database: selectedSourceDatabase,
+        sandbox_id: selectedSandboxId || null,
+        tables: selectedTablesPayload,
+      }
       );
 
       if (response.data.status === "SUCCESS") {
@@ -1069,7 +3174,89 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
     (dataset) => dataset.dataset_id === selectedDatasetIdLocal
   );
 
-  const canContinue = Boolean(selectedDatasetIdLocal);
+  const selectedSandboxDatasets = selectedSandboxId
+    ? availableDatasets.filter(
+        (dataset) => dataset.sandbox_id === selectedSandboxId
+      )
+    : [];
+
+  const continueWithExistingSandboxData = () => {
+    if (!selectedSandboxId) {
+      setUploadError("Please select a sandbox first.");
+      return;
+    }
+
+    if (selectedSandboxDatasets.length === 0) {
+      setUploadError("No generated datasets found for this sandbox. Please generate data once for the selected tables.");
+      return;
+    }
+
+    const firstDataset = selectedSandboxDatasets[0];
+
+    setSelectedDatasetIdLocal(firstDataset.dataset_id);
+    setSelectedFileName(
+      selectedSandboxDatasets.length === 1
+        ? firstDataset.filename
+        : `${selectedSandboxDatasets.length} existing sandbox tables selected`
+    );
+    setUploadMessage(
+      `Loaded ${selectedSandboxDatasets.length} existing generated table(s) from this sandbox. You can continue to masking rules without regenerating data.`
+    );
+    setUploadError(null);
+
+    onMultipleDatasetsGenerated(selectedSandboxDatasets);
+  };
+
+  const deleteSandboxDataset = async (dataset) => {
+    if (!selectedSandboxId || !dataset?.dataset_id) {
+      setUploadError("Please select a sandbox and dataset before deleting.");
+      return;
+    }
+
+    const tableLabel = dataset.table_name || dataset.filename || "this table";
+
+    const confirmed = window.confirm(
+      `Delete generated data for ${tableLabel} from this sandbox? This removes it only from the selected sandbox.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingDatasetId(dataset.dataset_id);
+      setUploadMessage(null);
+      setUploadError(null);
+
+      const response = await axios.delete(
+        `${API_BASE_URL}/sandboxes/${selectedSandboxId}/datasets/${dataset.dataset_id}`
+      );
+
+      if (response.data.status === "SUCCESS") {
+        setUploadMessage(response.data.message || `Deleted ${tableLabel} from this sandbox.`);
+
+        if (selectedDatasetIdLocal === dataset.dataset_id) {
+          setSelectedDatasetIdLocal("");
+          setSelectedFileName(null);
+        }
+
+        await fetchDatasets();
+        await fetchSandboxes();
+      } else {
+        setUploadError(response.data.message || "Unable to delete generated table data.");
+      }
+    } catch (err) {
+      console.error("Delete sandbox dataset error:", err);
+      setUploadError(
+        err.response?.data?.message ||
+          err.response?.data?.detail ||
+          err.message ||
+          "Unable to delete generated table data."
+      );
+    } finally {
+      setDeletingDatasetId("");
+    }
+  };
+
+  const canContinue = Boolean(selectedDatasetIdLocal) && Boolean(selectedSandboxId);
 
   return (
     <div className="space-y-5">
@@ -1083,26 +3270,26 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">
+                  <h2 className="text-base font-semibold text-slate-900">
                     Source Dataset
                   </h2>
-                  <p className="text-sm text-slate-500">
-                    Select an existing source dataset, or generate new test data from backend source tables.
+                  <p className="text-[13px] text-slate-500">
+                    Select a sandbox first, then generate or select source data inside that isolated workspace.
                   </p>
                 </div>
               </div>
 
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                Step 1 · Extraction
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+Step 1 · Sandbox & Source
               </span>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-sm font-medium text-slate-700">
+                <label className="text-[13px] font-medium text-slate-700">
                   Source Connection
                 </label>
-                <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
+                <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none">
                   <option>Databricks Unity Catalog</option>
                   <option>Local Uploaded CSV / Generated Test Data</option>
                   <option>PostgreSQL</option>
@@ -1113,13 +3300,13 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
 
               <div>
                 <div className="flex items-center justify-between gap-3">
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-[13px] font-medium text-slate-700">
                     Existing Datasets
                   </label>
 
                   <button
                     onClick={fetchDatasets}
-                    className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                    className="text-[11px] font-medium text-slate-600 hover:text-slate-900"
                   >
                     Refresh
                   </button>
@@ -1128,13 +3315,17 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                 <select
                   value={selectedDatasetIdLocal}
                   onChange={(event) => handleSelectExistingDataset(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
                 >
                   <option value="">
-                    {loadingDatasets ? "Loading datasets..." : "Select existing dataset"}
+                    {loadingDatasets
+                      ? "Loading datasets..."
+                      : selectedSandboxId
+                        ? "Select existing data from this sandbox"
+                        : "Select sandbox first to filter generated data"}
                   </option>
 
-                  {availableDatasets.map((dataset) => (
+                  {(selectedSandboxId ? selectedSandboxDatasets : availableDatasets).map((dataset) => (
                     <option key={dataset.dataset_id} value={dataset.dataset_id}>
                       {dataset.filename}
                     </option>
@@ -1144,31 +3335,39 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
             </div>
 
             <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-900">Current Selection</p>
+              <p className="text-[13px] font-medium text-slate-900">Current Selection</p>
 
               {selectedFileName ? (
-                <div className="mt-3 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Dataset</p>
-                    <p className="mt-1 font-medium text-slate-900">{selectedFileName}</p>
+                <div className="mt-3 grid gap-3 text-[12px] text-slate-600 sm:grid-cols-1 xl:grid-cols-3">
+                  <div className="min-w-0 rounded-xl bg-white/70 p-3 ring-1 ring-slate-100">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Dataset</p>
+                    <p
+                      className="mt-1 min-w-0 break-words text-[12px] font-semibold leading-5 text-slate-900"
+                      title={selectedFileName}
+                    >
+                      {selectedFileName}
+                    </p>
                   </div>
 
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Source</p>
-                    <p className="mt-1 font-medium text-slate-900">
+                  <div className="min-w-0 rounded-xl bg-white/70 p-3 ring-1 ring-slate-100">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Source</p>
+                    <p
+                      className="mt-1 min-w-0 break-words text-[12px] font-semibold leading-5 text-slate-900"
+                      title={selectedDataset?.source_type || "current selection"}
+                    >
                       {selectedDataset?.source_type || "current selection"}
                     </p>
                   </div>
 
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Columns</p>
-                    <p className="mt-1 font-medium text-slate-900">
+                  <div className="min-w-0 rounded-xl bg-white/70 p-3 ring-1 ring-slate-100">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Columns</p>
+                    <p className="mt-1 text-[12px] font-semibold leading-5 text-slate-900">
                       {selectedDataset?.columns?.length || "Multiple tables"}
                     </p>
                   </div>
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-slate-500">
+                <p className="mt-3 text-[13px] text-slate-500">
                   No dataset selected yet.
                 </p>
               )}
@@ -1184,19 +3383,19 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Quick CSV Upload</h3>
-                <p className="text-sm text-slate-500">
+                <h3 className="text-base font-semibold text-slate-900">Quick CSV Upload</h3>
+                <p className="text-[13px] text-slate-500">
                   Small fallback option for one-off CSV testing.
                 </p>
               </div>
             </div>
 
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-              <p className="text-sm text-slate-500">
+              <p className="text-[13px] text-slate-500">
                 Upload a CSV and let the backend detect schema.
               </p>
 
-              <label className="mt-4 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50">
+              <label className="mt-4 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-[13px] font-medium text-slate-900 transition hover:bg-slate-50">
                 {uploading ? "Uploading..." : "Choose CSV File"}
                 <input
                   type="file"
@@ -1210,16 +3409,297 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
           </CardContent>
         </Card>
       </div>
+      
+      <Card className="rounded-3xl border border-indigo-100 bg-white shadow-sm">
+        <CardContent className="p-6">
+          <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Sandbox Manager
+              </h2>
+              <p className="text-[13px] text-slate-500">
+                Required first step: every pipeline runs inside an isolated user/project schema.
+              </p>
+            </div>
+
+            <span className="inline-flex w-fit items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700">
+Required · Schema-Level Isolation
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                Existing Sandbox
+              </label>
+              <select
+                value={selectedSandboxId}
+                onChange={(event) => handleSandboxChange(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="">Select sandbox</option>
+                {sandboxes.map((sandbox) => (
+                  <option key={sandbox.sandbox_id} value={sandbox.sandbox_id}>
+                    {sandbox.sandbox_schema} — {sandbox.owner}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                Owner
+              </label>
+              <input
+                value={sandboxOwner}
+                onChange={(event) => setSandboxOwner(event.target.value)}
+                placeholder="person_A"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                Project ID
+              </label>
+              <input
+                value={sandboxProjectId}
+                onChange={(event) => setSandboxProjectId(event.target.value)}
+                placeholder="Project_001"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                Target Environment
+              </label>
+              <select
+                value={sandboxTargetEnvironment}
+                onChange={(event) => setSandboxTargetEnvironment(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="DEV">DEV</option>
+                <option value="QA">QA</option>
+                <option value="REGRESSION">REGRESSION</option>
+                <option value="UAT">UAT</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={createSandbox}
+              disabled={sandboxCreating}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {sandboxCreating ? "Creating..." : "Create Sandbox"}
+            </button>
+
+            <button
+              type="button"
+              onClick={fetchSandboxes}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Refresh Sandboxes
+            </button>
+
+            {selectedSandboxId ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
+                Sandbox selected
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+Required: create or select sandbox
+              </span>
+            )}
+          </div>
+
+          {sandboxMessage && (
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              {sandboxMessage}
+            </div>
+          )}
+
+          {sandboxError && (
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+              {sandboxError}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedSandboxId && (
+        <Card className="rounded-2xl border border-emerald-100 bg-emerald-50 shadow-sm">
+          <CardContent className="p-4">
+            {(() => {
+              const selectedSandbox = sandboxes.find(
+                (sandbox) => sandbox.sandbox_id === selectedSandboxId
+              );
+
+              if (!selectedSandbox) return null;
+
+              return (
+                <div className="grid gap-4 text-[13px] md:grid-cols-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-emerald-700">Sandbox Schema</p>
+                    <p className="font-semibold text-slate-900 break-all leading-snug">
+                      {selectedSandbox.sandbox_schema}
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-emerald-700">Owner</p>
+                    <p className="font-semibold text-slate-900 break-words leading-snug">
+                      {selectedSandbox.owner}
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-emerald-700">Project</p>
+                    <p className="font-semibold text-slate-900 break-words leading-snug">
+                      {selectedSandbox.project_id}
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-emerald-700">Isolation</p>
+                    <p className="font-semibold text-slate-900 break-words leading-snug">
+                      {selectedSandbox.isolation_status}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
+
+      {selectedSandboxId && (
+        <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="text-[14px] font-semibold text-slate-900">
+                  Existing Generated Data in Selected Sandbox
+                </h3>
+                <p className="text-[13px] text-slate-500">
+                  Reuse data that was already generated for this sandbox, or delete table data that is no longer needed.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={fetchDatasets}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Refresh Data
+                </button>
+
+                <button
+                  type="button"
+                  onClick={continueWithExistingSandboxData}
+                  disabled={selectedSandboxDatasets.length === 0}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Continue with Existing Data
+                </button>
+              </div>
+            </div>
+
+            {uploadMessage && (
+              <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+                {uploadMessage}
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+                {uploadError}
+              </div>
+            )}
+
+            {selectedSandboxDatasets.length === 0 ? (
+              <div className="mt-4 rounded-xl bg-amber-50 p-4 text-[13px] text-amber-800">
+                No generated datasets are available for this sandbox yet. Select tables below and click Generate from Source once.
+              </div>
+            ) : (
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full min-w-[1100px] text-left text-[13px]">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Table</th>
+                      <th className="px-4 py-3 font-medium">Generated File</th>
+                      <th className="px-4 py-3 font-medium">Rows</th>
+                      <th className="px-4 py-3 font-medium">Columns</th>
+                      <th className="px-4 py-3 font-medium">Sandbox Schema</th>
+                      <th className="px-4 py-3 font-medium">Isolation</th>
+                      <th className="px-4 py-3 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedSandboxDatasets.map((dataset) => (
+                      <tr key={dataset.dataset_id} className="bg-white">
+                        <td className="px-4 py-3 font-medium text-slate-900 break-words">
+                          {dataset.table_name || "N/A"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 break-all">
+                          {dataset.filename}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">
+                          {dataset.row_count || "N/A"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">
+                          {dataset.columns?.length || 0}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 break-all">
+                          {dataset.sandbox_schema || "N/A"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
+                            {dataset.isolation_status || "ISOLATED"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => deleteSandboxDataset(dataset)}
+                            disabled={deletingDatasetId === dataset.dataset_id}
+                            className="rounded-xl border border-rose-200 px-3 py-1.5 text-[11px] font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deletingDatasetId === dataset.dataset_id ? "Deleting..." : "Delete"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!selectedSandboxId && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
+          <p className="font-semibold">Sandbox required before source generation</p>
+          <p className="mt-1">Create or select an isolated sandbox schema so this pipeline does not affect another user's work.</p>
+        </div>
+      )}
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900">
                 Generate Test Data from Existing Source Tables
               </h3>
-              <p className="text-sm text-slate-500">
-                Choose backend source tables, select only required columns, and generate schema-driven test data.
+              <p className="text-[13px] text-slate-500">
+                Choose backend source tables, select only required columns, and generate schema-driven test data inside the selected sandbox.
               </p>
             </div>
 
@@ -1227,6 +3707,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
               onClick={generateFromExistingSource}
               disabled={
                 sourceGenerating ||
+                !selectedSandboxId ||
                 !selectedSourceDatabase ||
                 selectedSourceTables.length === 0
               }
@@ -1238,16 +3719,16 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-[13px] font-medium text-slate-700">
                 Source Connection
               </label>
-              <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none">
+              <select className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none">
                 <option>Databricks</option>
               </select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-[13px] font-medium text-slate-700">
                 Database / Catalog.Schema
               </label>
               <select
@@ -1256,7 +3737,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                   setSelectedSourceDatabase(event.target.value);
                   fetchSourceTables(event.target.value);
                 }}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
               >
                 <option value="">Select database</option>
 
@@ -1269,7 +3750,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-[13px] font-medium text-slate-700">
                 Default Row Count
               </label>
               <input
@@ -1278,20 +3759,20 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                 max="10000"
                 value={sourceRowCount}
                 onChange={(event) => setSourceRowCount(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
               />
             </div>
           </div>
 
           <div className="mt-6 grid gap-5 lg:grid-cols-[260px_1fr]">
             <div className="rounded-2xl border border-slate-200 p-4">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-[13px] font-semibold text-slate-900">
                 Available Tables
               </p>
 
               <div className="mt-4 space-y-2">
                 {sourceTables.length === 0 && (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-[13px] text-slate-500">
                     Select a database to load tables.
                   </p>
                 )}
@@ -1299,7 +3780,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                 {sourceTables.map((tableName) => (
                   <label
                     key={tableName}
-                    className="flex cursor-pointer items-center gap-3 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-700"
+                    className="flex cursor-pointer items-center gap-3 rounded-xl bg-slate-50 px-3 py-3 text-[13px] text-slate-700"
                   >
                     <input
                       type="checkbox"
@@ -1313,13 +3794,13 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
             </div>
 
             <div className="rounded-2xl border border-slate-200 p-4">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-[13px] font-semibold text-slate-900">
                 Column Selection
               </p>
 
               <div className="mt-4 space-y-5">
                 {selectedSourceTables.length === 0 && (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-[13px] text-slate-500">
                     Select one or more tables to choose columns.
                   </p>
                 )}
@@ -1333,13 +3814,13 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                             <p className="font-medium text-slate-900">{tableName}</p>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-[11px] text-slate-500">
                               {selectedColumns.length} of {columns.length} columns selected
                             </p>
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <label className="text-xs font-medium text-slate-600">
+                            <label className="text-[11px] font-medium text-slate-600">
                               Rows
                             </label>
                             <input
@@ -1353,7 +3834,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                                   [tableName]: event.target.value,
                                 }))
                               }
-                              className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs outline-none"
+                              className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1 text-[11px] outline-none"
                             />
                           </div>
 
@@ -1365,7 +3846,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                                 [tableName]: columns.map((column) => column.name),
                               }))
                             }
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700"
                           >
                             Select All
                           </button>
@@ -1377,7 +3858,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                                 [tableName]: [],
                               }))
                             }
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700"
                           >
                             Clear
                           </button>
@@ -1388,7 +3869,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
                         {columns.map((column) => (
                           <label
                             key={`${tableName}-${column.name}`}
-                            className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                            className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-700"
                           >
                             <input
                               type="checkbox"
@@ -1417,7 +3898,7 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
         <Card className="rounded-2xl shadow-sm">
           <CardContent className="p-5">
             {selectedFileName && (
-              <p className="text-sm text-slate-600">
+              <p className="text-[13px] text-slate-600">
                 Selected dataset:{" "}
                 <span className="font-medium text-slate-900">
                   {selectedFileName}
@@ -1426,13 +3907,13 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
             )}
 
             {uploadMessage && (
-              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-700">
                 {uploadMessage}
               </div>
             )}
 
             {uploadError && (
-              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
                 {uploadError}
               </div>
             )}
@@ -1440,9 +3921,14 @@ function SourceStep({ onNext, onDatasetUploaded, onMultipleDatasetsGenerated }) 
         </Card>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-2">
+        {!canContinue && (
+          <p className="text-[11px] text-slate-500">
+            Select a sandbox and generate/select a dataset to continue.
+          </p>
+        )}
         <Button onClick={onNext} disabled={!canContinue} className="rounded-xl">
-          Continue to Masking Rules
+          Continue to Rule Configuration
           <ChevronRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
@@ -1588,10 +4074,10 @@ useEffect(() => {
       <CardContent className="p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-base font-semibold text-slate-900">
               AI-Assisted Masking Rule Assignment
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-[13px] text-slate-500">
               AI suggests masking rules first. Admin-locked rules cannot be overridden by developers.
             </p>
           </div>
@@ -1632,7 +4118,7 @@ useEffect(() => {
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[1150px] text-left text-sm">
+          <table className="w-full min-w-[1150px] text-left text-[13px]">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Column</th>
@@ -1661,18 +4147,18 @@ useEffect(() => {
 
                     <td className="px-4 py-3">
                       {col.pii ? (
-                        <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                           <AlertTriangle className="mr-1 h-3 w-3" /> PII
                         </span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
                           Non-PII
                         </span>
                       )}
                     </td>
 
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                         {col.ai_suggested_rule || "No Masking"}
                       </span>
                     </td>
@@ -1682,7 +4168,7 @@ useEffect(() => {
                         value={col.rule || "No Masking"}
                         disabled={isDeveloper && col.admin_locked}
                         onChange={(e) => updateRule(col.name, e.target.value)}
-                        className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ${
+                        className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none ${
                           isDeveloper && col.admin_locked
                             ? "cursor-not-allowed bg-slate-100 text-slate-500"
                             : "bg-white"
@@ -1698,22 +4184,22 @@ useEffect(() => {
 
                     <td className="px-4 py-3">
                       {col.admin_locked ? (
-                        <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-[11px] font-medium text-red-700">
                           <Lock className="mr-1 h-3 w-3" />
                           Admin Locked
                         </span>
                       ) : isOverridden ? (
-                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700">
                           User Overridden
                         </span>
                       ) : (
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                           AI Accepted
                         </span>
                       )}
                     </td>
 
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td className="px-4 py-3 text-[11px] text-slate-500">
                       {col.admin_locked
                         ? `${col.locked_by}: ${col.locked_reason}`
                         : "Override allowed"}
@@ -1725,7 +4211,7 @@ useEffect(() => {
           </table>
         </div>
 
-        <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+        <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-[13px] text-slate-600">
           <p className="font-medium text-slate-900">Role-Based Override Logic</p>
           <p className="mt-1">
             Admin users can override all masking rules. Developer users cannot override admin-locked sensitive rules such as SSN partial masking. Backend also enforces locked rules during execution.
@@ -1737,6 +4223,69 @@ useEffect(() => {
             Continue to Job Run
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SandboxSummaryCard({ selectedDatasets = [], sticky = false }) {
+  const sandboxDataset = selectedDatasets.find((dataset) => dataset.sandbox_id);
+
+  if (!sandboxDataset) {
+    return null;
+  }
+
+  return (
+    <Card
+      className={`rounded-2xl border border-indigo-100 bg-indigo-50 shadow-sm ${
+        sticky ? "sticky top-4 z-20" : ""
+      }`}
+    >
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[13px] font-semibold text-slate-900">
+              Active Sandbox
+            </h3>
+            <p className="text-[11px] text-slate-600">
+              This pipeline is running inside an isolated sandbox schema.
+            </p>
+          </div>
+
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-medium text-emerald-700">
+            {sandboxDataset.isolation_status || "ISOLATED"}
+          </span>
+        </div>
+
+        <div className="grid gap-4 text-[13px] md:grid-cols-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-indigo-700">Sandbox Schema</p>
+            <p className="font-semibold text-slate-900 break-all leading-snug">
+              {sandboxDataset.sandbox_schema || "Not Available"}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-indigo-700">Owner</p>
+            <p className="font-semibold text-slate-900 break-words leading-snug">
+              {sandboxDataset.sandbox_owner || "Not Available"}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-indigo-700">Project</p>
+            <p className="font-semibold text-slate-900 break-words leading-snug">
+              {sandboxDataset.project_id || "Not Available"}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-indigo-700">Target</p>
+            <p className="font-semibold text-slate-900 break-words leading-snug">
+              {sandboxDataset.target_environment || "Not Available"}
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -1879,14 +4428,15 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
   );
 
   return (
-    <Card className="rounded-2xl shadow-sm">
-      <CardContent className="p-6">
+    <div className="space-y-6">
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-base font-semibold text-slate-900">
               Multi-Table Masking Rule Assignment
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-[13px] text-slate-500">
               Review masking rules for every selected or generated source table before execution.
             </p>
           </div>
@@ -1933,18 +4483,18 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
                   <p className="font-semibold text-slate-900">
                     {table.table_name || table.filename}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[11px] text-slate-500">
                     Dataset: {table.filename} · {table.columns?.length || 0} columns
                   </p>
                 </div>
 
-                <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                   {table.source_type || "dataset"}
                 </span>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px] text-left text-sm">
+                <table className="w-full min-w-[1100px] text-left text-[13px]">
                   <thead className="bg-white text-slate-600">
                     <tr>
                       <th className="px-4 py-3 font-medium">Column</th>
@@ -1973,18 +4523,18 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
 
                           <td className="px-4 py-3">
                             {col.pii ? (
-                              <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                              <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                                 <AlertTriangle className="mr-1 h-3 w-3" /> PII
                               </span>
                             ) : (
-                              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
                                 Non-PII
                               </span>
                             )}
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="inline-flex whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                            <span className="inline-flex whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                               {col.ai_suggested_rule || "No Masking"}
                             </span>
                           </td>
@@ -1996,7 +4546,7 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
                               onChange={(e) =>
                                 updateRule(table.dataset_id, col.name, e.target.value)
                               }
-                              className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ${
+                              className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] outline-none ${
                                 isDeveloper && col.admin_locked
                                   ? "cursor-not-allowed bg-slate-100 text-slate-500"
                                   : "bg-white"
@@ -2012,22 +4562,22 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
 
                           <td className="px-4 py-3">
                             {col.admin_locked ? (
-                              <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                              <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-[11px] font-medium text-red-700">
                                 <Lock className="mr-1 h-3 w-3" />
                                 Admin Locked
                               </span>
                             ) : isOverridden ? (
-                              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                              <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700">
                                 User Overridden
                               </span>
                             ) : (
-                              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                                 AI Accepted
                               </span>
                             )}
                           </td>
 
-                          <td className="px-4 py-3 text-xs text-slate-500">
+                          <td className="px-4 py-3 text-[11px] text-slate-500">
                             {col.admin_locked
                               ? `${col.locked_by}: ${col.locked_reason}`
                               : "Override allowed"}
@@ -2048,6 +4598,236 @@ function MultiTableRulesStep({ currentUser, selectedDatasets, onRulesChange, onN
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PreRunValidationAgentCard({ validation, loading, error, onValidate }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedChecks, setExpandedChecks] = useState({});
+
+  const status = validation?.overall_status || "PENDING";
+
+  const statusStyles = {
+    READY: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    WARNING: "border-amber-200 bg-amber-50 text-amber-800",
+    BLOCKED: "border-red-200 bg-red-50 text-red-800",
+    PENDING: "border-slate-200 bg-slate-50 text-slate-700",
+  };
+
+  const checkStyles = {
+    PASSED: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    WARNING: "bg-amber-50 text-amber-700 border-amber-100",
+    BLOCKED: "bg-red-50 text-red-700 border-red-100",
+  };
+
+  const checks = validation?.checks || [];
+  const blockedChecks = checks.filter((check) => check.status === "BLOCKED").length;
+  const warningChecks = checks.filter((check) => check.status === "WARNING").length;
+
+  const toggleCheck = (checkName) => {
+    setExpandedChecks((current) => ({
+      ...current,
+      [checkName]: !current[checkName],
+    }));
+  };
+
+  return (
+    <Card className="rounded-2xl border border-indigo-100 shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <button
+            type="button"
+            onClick={() => setIsExpanded((current) => !current)}
+            className="flex flex-1 gap-3 text-left"
+          >
+            <div className="h-fit rounded-2xl bg-indigo-50 p-3">
+              <Shield className="h-5 w-5 text-indigo-700" />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Pre-Run Validation Agent
+                </h2>
+
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-slate-500" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-slate-500" />
+                )}
+              </div>
+
+              <p className="mt-1 text-[13px] text-slate-500">
+                Collapsed by default. Expand only when you want to inspect validation checks.
+              </p>
+
+              {validation?.summary && (
+                <p className="mt-2 line-clamp-2 text-[13px] font-medium text-slate-700">
+                  {validation.summary}
+                </p>
+              )}
+
+              {error && (
+                <p className="mt-2 text-[13px] font-medium text-red-700">
+                  {error}
+                </p>
+              )}
+            </div>
+          </button>
+
+          <div className="flex flex-wrap items-center gap-3 md:justify-end">
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                statusStyles[status] || statusStyles.PENDING
+              }`}
+            >
+              {loading ? "VALIDATING" : status}
+            </span>
+
+            {validation && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                {blockedChecks} blocked · {warningChecks} warning
+              </span>
+            )}
+
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              disabled={loading}
+              onClick={onValidate}
+            >
+              {loading ? "Validating..." : "Re-Validate"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => setIsExpanded((current) => !current)}
+            >
+              {isExpanded ? "Hide Details" : "Show Details"}
+            </Button>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-5 border-t border-slate-100 pt-5">
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-700">
+                {error}
+              </div>
+            )}
+
+            {!error && !validation && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[13px] text-slate-600">
+                Waiting to run pre-execution checks.
+              </div>
+            )}
+
+            {validation && (
+              <>
+                <div
+                  className={`rounded-xl border p-4 text-[13px] ${
+                    statusStyles[status] || statusStyles.PENDING
+                  }`}
+                >
+                  {validation.summary}
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">Datasets</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {validation.metrics?.datasets_selected ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">Tables</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {validation.metrics?.tables_selected ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">PII Masked</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {(validation.metrics?.pii_columns_masked ?? 0)}/{validation.metrics?.pii_columns_detected ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">Admin Rules</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {validation.metrics?.admin_locked_rule_matches ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">Overlaps</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">
+                      {validation.metrics?.overlap_sandboxes ?? 0}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {checks.map((check) => {
+                    const expanded = !!expandedChecks[check.name];
+
+                    return (
+                      <div
+                        key={check.name}
+                        className="rounded-xl border border-slate-200 bg-white"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleCheck(check.name)}
+                          className="flex w-full flex-col gap-3 p-4 text-left md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            {expanded ? (
+                              <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                            )}
+                            <p className="font-semibold text-slate-900">
+                              {check.name}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`w-fit rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                              checkStyles[check.status] || "bg-slate-50 text-slate-700 border-slate-100"
+                            }`}
+                          >
+                            {check.status}
+                          </span>
+                        </button>
+
+                        {expanded && (
+                          <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                            <p className="text-[13px] text-slate-600">{check.message}</p>
+
+                            {Array.isArray(check.details) && check.details.length > 0 && (
+                              <div className="mt-3 max-h-36 overflow-auto rounded-lg bg-slate-50 p-3 text-[11px] text-slate-600">
+                                <pre className="whitespace-pre-wrap break-words">
+                                  {JSON.stringify(check.details, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -2059,6 +4839,9 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
   const [jobId, setJobId] = useState(null);
   const [jobDetails, setJobDetails] = useState(null);
   const [error, setError] = useState(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+  const [validationError, setValidationError] = useState(null);
 
   const selectedDatasetList =
     Array.isArray(selectedDatasets) && selectedDatasets.length > 0
@@ -2068,6 +4851,70 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
       : [];
 
   const isMultiTableRun = selectedDatasetList.length > 1;
+  const sandboxContext = selectedDatasetList.find((dataset) => dataset.sandbox_id) || {};
+  const totalRequestedRows = selectedDatasetList.reduce(
+    (total, dataset) => total + Number(dataset.row_count || 0),
+    0
+  );
+  const configuredRuleCount = selectedDatasetList.reduce((total, dataset) => {
+    const datasetRules = maskingRules?.[dataset.dataset_id] || {};
+    return (
+      total +
+      Object.values(datasetRules).filter((rule) => rule && rule !== "No Masking").length
+    );
+  }, 0);
+
+  const validationDependency = `${selectedDatasetList
+    .map((dataset) => dataset.dataset_id)
+    .join("|")}::${JSON.stringify(maskingRules || {})}`;
+
+  const buildValidationPayload = () => ({
+    datasets: selectedDatasetList.map((dataset) => ({
+      dataset_id: dataset.dataset_id,
+      masking_rules: maskingRules?.[dataset.dataset_id] || {},
+    })),
+    user_role: currentUser?.role || "developer",
+  });
+
+  const validatePreRun = async () => {
+    if (selectedDatasetList.length === 0) {
+      setValidationResult(null);
+      setValidationError("Please select at least one dataset before validation.");
+      return null;
+    }
+
+    try {
+      setValidationLoading(true);
+      setValidationError(null);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/agents/pre-run-validation`,
+        buildValidationPayload()
+      );
+
+      const validation = response.data.validation;
+      setValidationResult(validation);
+      return validation;
+    } catch (err) {
+      console.error("Pre-run validation error:", err);
+      const message =
+        err.response?.data?.message ||
+        err.response?.data?.detail ||
+        err.message ||
+        "Unable to run pre-run validation agent.";
+
+      setValidationError(message);
+      return null;
+    } finally {
+      setValidationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDatasetList.length > 0) {
+      validatePreRun();
+    }
+  }, [validationDependency]);
 
   const startRun = async () => {
     try {
@@ -2080,6 +4927,28 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
       if (selectedDatasetList.length === 0) {
         setRunning(false);
         setError("Please upload, generate, or select a dataset before running anonymization.");
+        return;
+      }
+
+      const missingSandboxContext = selectedDatasetList.some((dataset) => !dataset.sandbox_id);
+
+      if (missingSandboxContext) {
+        setRunning(false);
+        setError("Sandbox context is missing. Please go back to Sandbox & Source and create/select a sandbox before running.");
+        return;
+      }
+
+      const validation = await validatePreRun();
+
+      if (!validation) {
+        setRunning(false);
+        setError("Pre-run validation could not be completed. Please validate again before running.");
+        return;
+      }
+
+      if (!validation.can_run) {
+        setRunning(false);
+        setError(validation.summary || "Pre-run validation blocked execution.");
         return;
       }
 
@@ -2132,28 +5001,36 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-3">
+    <div className="space-y-6">
+      <PreRunValidationAgentCard
+        validation={validationResult}
+        loading={validationLoading}
+        error={validationError}
+        onValidate={validatePreRun}
+      />
+
+      <div className="grid gap-5 lg:grid-cols-3">
       <Card className="rounded-2xl shadow-sm lg:col-span-2">
         <CardContent className="p-6">
-          <h2 className="text-lg font-semibold text-slate-900">Run Anonymization Job</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-slate-900">Run Anonymization Job</h2>
+          <p className="mt-1 text-[13px] text-slate-500">
             Submit one dataset or multiple generated source tables to the FastAPI execution layer.
           </p>
 
           <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm font-semibold text-slate-900">
+                <p className="text-[13px] font-semibold text-slate-900">
                   Execution Scope
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-[11px] text-slate-500">
                   {isMultiTableRun
                     ? `${selectedDatasetList.length} source tables will be anonymized in one multi-table job.`
                     : "One dataset will be anonymized."}
                 </p>
               </div>
 
-              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+              <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                 {isMultiTableRun ? "Multi-table run" : "Single-table run"}
               </span>
             </div>
@@ -2162,12 +5039,12 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
               {selectedDatasetList.map((dataset) => (
                 <div
                   key={dataset.dataset_id}
-                  className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                  className="rounded-xl bg-slate-50 px-4 py-3 text-[13px] text-slate-700"
                 >
                   <p className="font-medium text-slate-900">
                     {dataset.table_name || dataset.filename || dataset.dataset_id}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500 break-all">
+                  <p className="mt-1 text-[11px] text-slate-500 break-all">
                     {dataset.dataset_id}
                   </p>
                 </div>
@@ -2192,7 +5069,7 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
                   <p className="font-semibold text-slate-900">
                     {complete ? "Job Completed" : running ? "Job Running" : "Ready to Run"}
                   </p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-[13px] text-slate-500">
                     {complete
                       ? "Backend completed anonymization for the selected table scope."
                       : running
@@ -2202,7 +5079,16 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
                 </div>
               </div>
 
-              <Button onClick={startRun} disabled={running} className="rounded-xl">
+              <Button
+                onClick={startRun}
+                disabled={
+                  running ||
+                  validationLoading ||
+                  selectedDatasetList.some((dataset) => !dataset.sandbox_id) ||
+                  validationResult?.can_run === false
+                }
+                className="rounded-xl"
+              >
                 {running ? "Running..." : "Start Job"}
               </Button>
             </div>
@@ -2219,14 +5105,14 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
             )}
 
             {jobId && (
-              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-[13px] text-emerald-800">
                 <p className="font-medium">Job submitted successfully</p>
                 <p className="mt-1 break-all">Job ID: {jobId}</p>
               </div>
             )}
 
             {error && (
-              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-700">
                 {error}
               </div>
             )}
@@ -2301,20 +5187,56 @@ function RunStep({ currentUser, onNext, onJobCreated, maskingRules, datasetId, s
 
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <h3 className="font-semibold text-slate-900">Execution Behavior</h3>
-          <div className="mt-5 space-y-4 text-sm text-slate-600">
+          <h3 className="font-semibold text-slate-900">Pre-Run Summary</h3>
+          <p className="mt-1 text-[13px] text-slate-500">
+            Final checkpoint before submitting the isolated sandbox execution.
+          </p>
+
+          <div className="mt-5 space-y-3 text-[13px]">
             <div className="rounded-xl bg-slate-50 p-4">
-              React sends every selected dataset ID and its table-specific masking rules to FastAPI.
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Sandbox</p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {sandboxContext.sandbox_schema || "No sandbox metadata"}
+              </p>
             </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              FastAPI anonymizes each generated table and creates one parent execution job.
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Tables</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {selectedDatasetList.length}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Rows Requested</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {totalRequestedRows > 0 ? totalRequestedRows.toLocaleString() : "Runtime"}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Masked Columns</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {configuredRuleCount}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Target</p>
+                <p className="mt-1 font-semibold text-slate-900">
+                  {sandboxContext.target_environment || "Not Available"}
+                </p>
+              </div>
             </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              The same pattern can later trigger one Databricks workflow with multiple table tasks.
+
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+              Changes are scoped by sandbox_id and sandbox_schema, so overlapping tables in other sandboxes are not affected.
             </div>
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
@@ -2325,8 +5247,8 @@ function PreviewTable({ title, rows, warning = false }) {
     return (
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <p className="mt-3 text-sm text-slate-500">No preview rows available.</p>
+          <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+          <p className="mt-3 text-[13px] text-slate-500">No preview rows available.</p>
         </CardContent>
       </Card>
     );
@@ -2340,21 +5262,21 @@ function PreviewTable({ title, rows, warning = false }) {
     <Card className="rounded-2xl shadow-sm">
       <CardContent className="p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <h2 className="text-base font-semibold text-slate-900">{title}</h2>
 
           {warning ? (
-            <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+            <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
               <AlertTriangle className="mr-1 h-3 w-3" /> Contains PII
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
               <CheckCircle2 className="mr-1 h-3 w-3" /> Masked
             </span>
           )}
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[760px] text-left text-xs">
+          <table className="w-full min-w-[760px] text-left text-[11px]">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 {headers.map((header) => (
@@ -2385,7 +5307,7 @@ function PreviewTable({ title, rows, warning = false }) {
   );
 }
 
-function ReviewStep({ jobId }) {
+function ReviewStep({ jobId, selectedDatasets = [] }) {
   const [previewData, setPreviewData] = useState(null);
   const [auditData, setAuditData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -2422,7 +5344,7 @@ function ReviewStep({ jobId }) {
     return (
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <p className="text-sm text-slate-600">Loading preview and audit data...</p>
+          <p className="text-[13px] text-slate-600">Loading preview and audit data...</p>
         </CardContent>
       </Card>
     );
@@ -2432,7 +5354,7 @@ function ReviewStep({ jobId }) {
     return (
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-700">{error}</div>
         </CardContent>
       </Card>
     );
@@ -2474,7 +5396,7 @@ const tableNames = Array.from(
 
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-[13px] text-emerald-800">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-medium">Review data loaded from FastAPI backend</p>
@@ -2484,7 +5406,7 @@ const tableNames = Array.from(
           <a
             href={`http://127.0.0.1:8000/download/masked-output/${jobId}`}
             download
-            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
           >
             Download Masked CSV
           </a>
@@ -2495,7 +5417,7 @@ const tableNames = Array.from(
         {tableNames.map((tableName) => (
           <div key={tableName} className="space-y-4">
             <div className="rounded-2xl bg-slate-900 px-5 py-3 text-white">
-              <p className="text-sm font-semibold">Table: {tableName}</p>
+              <p className="text-[13px] font-semibold">Table: {tableName}</p>
             </div>
 
             <div className="grid gap-5 lg:grid-cols-2">
@@ -2521,13 +5443,13 @@ const tableNames = Array.from(
               <FileText className="h-5 w-5 text-slate-700" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Audit Summary</h2>
-              <p className="text-sm text-slate-500">Generated by backend after anonymization run.</p>
+              <h2 className="text-base font-semibold text-slate-900">Audit Summary</h2>
+              <p className="text-[13px] text-slate-500">Generated by backend after anonymization run.</p>
             </div>
           </div>
 
           <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-[13px]">
               <tbody className="divide-y divide-slate-100">
                 {auditRows.map((row) => (
                   <tr key={row.metric}>
@@ -2562,18 +5484,19 @@ function CreatePipelinePage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Create Pipeline"
-        description="Create a TDM pipeline by selecting source data, reviewing schema classification, assigning masking rules, executing anonymization, and validating the output."
+        title="Pipeline Workspace"
+        description="Create an isolated sandbox workspace, select source tables, configure masking rules, run anonymization, and review masked outputs."
         icon={Play}
       />
 
       <WorkflowProgress activeStep={activeStep} />
       <Stepper activeStep={activeStep} />
+      <SandboxSummaryCard selectedDatasets={selectedDatasets} sticky />
 
       <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-medium text-slate-900">Pipeline Navigation</p>
-          <p className="text-xs text-slate-500">
+          <p className="text-[13px] font-medium text-slate-900">Pipeline Navigation</p>
+          <p className="text-[11px] text-slate-500">
             Move between extraction, anonymization, execution, and validation.
           </p>
         </div>
@@ -2613,15 +5536,17 @@ function CreatePipelinePage({
       >
         {activeStep === 1 && (
           <SourceStep
-            onDatasetUploaded={({ datasetId, columns }) => {
+            onDatasetUploaded={(datasetInfo) => {
+              const { datasetId, columns, filename, ...datasetMetadata } = datasetInfo;
               const safeColumns = Array.isArray(columns) ? columns : sampleColumns;
 
               setSelectedDatasetId(datasetId);
               setSelectedDatasets([
                 {
+                  ...datasetMetadata,
                   dataset_id: datasetId,
-                  filename: "Selected Dataset",
-                  source_type: "selected_dataset",
+                  filename: filename || datasetMetadata.filename || "Selected Dataset",
+                  source_type: datasetMetadata.source_type || "selected_dataset",
                   columns: safeColumns,
                 },
               ]);
@@ -2684,7 +5609,7 @@ function CreatePipelinePage({
           />
         )}
 
-        {activeStep === 4 && <ReviewStep jobId={currentJobId} />}
+        {activeStep === 4 && <ReviewStep jobId={currentJobId} selectedDatasets={selectedDatasets} />}
       </motion.div>
     </div>
   );
@@ -2720,8 +5645,8 @@ function JobHistory() {
       <CardContent className="p-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Recent Job History</h2>
-            <p className="text-sm text-slate-500">Tracks anonymization runs submitted during this backend session.</p>
+            <h2 className="text-base font-semibold text-slate-900">Recent Job History</h2>
+            <p className="text-[13px] text-slate-500">Tracks anonymization runs submitted during this backend session.</p>
           </div>
 
           <Button variant="outline" className="rounded-xl" onClick={fetchHistory}>
@@ -2729,21 +5654,21 @@ function JobHistory() {
           </Button>
         </div>
 
-        {loading && <p className="mt-5 text-sm text-slate-500">Loading job history...</p>}
+        {loading && <p className="mt-5 text-[13px] text-slate-500">Loading job history...</p>}
 
         {error && (
-          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-700">{error}</div>
         )}
 
         {!loading && !error && jobs.length === 0 && (
-          <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+          <div className="mt-5 rounded-xl bg-slate-50 p-4 text-[13px] text-slate-600">
             No jobs yet. Run an anonymization job to populate history.
           </div>
         )}
 
         {!loading && !error && jobs.length > 0 && (
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-[13px]">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Job ID</th>
@@ -2760,11 +5685,11 @@ function JobHistory() {
               <tbody className="divide-y divide-slate-100">
                 {jobs.map((job) => (
                   <tr key={job.job_id} className="bg-white">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-700">{job.job_id}</td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-700">{job.job_id}</td>
                     <td className="px-4 py-3 text-slate-700">{job.dataset_name || "N/A"}</td>
                     <td className="px-4 py-3 text-slate-700">{job.source_type || "N/A"}</td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                         {job.status}
                       </span>
                     </td>
@@ -2898,10 +5823,10 @@ function DataClassificationPage() {
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 Classification Workspace
               </h2>
-              <p className="text-sm text-slate-500">
+              <p className="text-[13px] text-slate-500">
                 Select a dataset to review column-level classification and masking recommendations.
               </p>
             </div>
@@ -2913,14 +5838,14 @@ function DataClassificationPage() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div className="md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-[13px] font-medium text-slate-700">
                 Dataset / Table
               </label>
 
               <select
                 value={selectedDatasetId}
                 onChange={(event) => handleDatasetChange(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
               >
                 <option value="">
                   {loading ? "Loading datasets..." : "Select dataset"}
@@ -2935,8 +5860,8 @@ function DataClassificationPage() {
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-900">Source Type</p>
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="text-[13px] font-medium text-slate-900">Source Type</p>
+              <p className="mt-2 text-[13px] text-slate-600">
                 {selectedDataset?.source_type || "No dataset selected"}
               </p>
             </div>
@@ -2947,7 +5872,7 @@ function DataClassificationPage() {
       {!selectedDataset && (
         <Card className="rounded-2xl shadow-sm">
           <CardContent className="p-6">
-            <p className="text-sm text-slate-600">
+            <p className="text-[13px] text-slate-600">
               No dataset available yet. Go to Execute → Create Pipeline and upload or generate data first.
             </p>
           </CardContent>
@@ -2959,21 +5884,21 @@ function DataClassificationPage() {
           <CardContent className="p-6">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">
+                <h2 className="text-base font-semibold text-slate-900">
                   AI-Assisted Classification Results
                 </h2>
-                <p className="text-sm text-slate-500">
+                <p className="text-[13px] text-slate-500">
                   Dataset: {selectedDataset.filename}
                 </p>
               </div>
 
-              <div className="rounded-full bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600">
+              <div className="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-600">
                 {selectedDataset.columns?.length || 0} columns detected
               </div>
             </div>
 
             <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full min-w-[1100px] text-left text-sm">
+              <table className="w-full min-w-[1100px] text-left text-[13px]">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-4 py-3 font-medium">Table Name</th>
@@ -3003,7 +5928,7 @@ function DataClassificationPage() {
 
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
+                          className={`inline-flex rounded-full px-3 py-1 text-[11px] font-medium ${
                             column.pii
                               ? "bg-amber-50 text-amber-700"
                               : "bg-slate-100 text-slate-600"
@@ -3018,13 +5943,13 @@ function DataClassificationPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                           Yes
                         </span>
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                        <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                           {getTag(column)}
                         </span>
                       </td>
@@ -3034,7 +5959,7 @@ function DataClassificationPage() {
               </table>
             </div>
 
-            <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-[13px] text-slate-600">
               <p className="font-medium text-slate-900">MVP Note</p>
               <p className="mt-1">
                 This currently uses rule-based classification from column names. Later, this can be upgraded to GenAI/Presidio-based classification using column names, data samples, descriptions, and business metadata.
@@ -3315,16 +6240,16 @@ const deleteLockedRule = async (columnName) => {
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 Admin Locked Rule Configuration
               </h2>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-[13px] text-slate-500">
                 Admin can define masking rules that Developers cannot override during pipeline execution.
               </p>
 
               {!isAdmin && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-700">
                   You are logged in as Developer. Locked rules are view-only and can only be changed by Admin.
                 </div>
               )}
@@ -3345,7 +6270,7 @@ const deleteLockedRule = async (columnName) => {
 
           <div className="mt-6 grid gap-4 md:grid-cols-4">
             <div>
-  <label className="text-sm font-medium text-slate-700">
+  <label className="text-[13px] font-medium text-slate-700">
     Dataset
   </label>
 
@@ -3353,7 +6278,7 @@ const deleteLockedRule = async (columnName) => {
   disabled={!isAdmin}
   value={selectedDatasetForColumns}
   onChange={(event) => setSelectedDatasetForColumns(event.target.value)}
-  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
 >
     <option value="">Select dataset</option>
 
@@ -3366,7 +6291,7 @@ const deleteLockedRule = async (columnName) => {
 </div>
 
 <div>
-  <label className="text-sm font-medium text-slate-700">
+  <label className="text-[13px] font-medium text-slate-700">
     Column to Lock
   </label>
 
@@ -3374,7 +6299,7 @@ const deleteLockedRule = async (columnName) => {
     disabled={!isAdmin}
     value={selectedColumn}
     onChange={(event) => setSelectedColumn(event.target.value)}
-    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
   >
     <option value="">Select column</option>
 
@@ -3387,12 +6312,12 @@ const deleteLockedRule = async (columnName) => {
 </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">Locked Rule</label>
+              <label className="text-[13px] font-medium text-slate-700">Locked Rule</label>
               <select
                 disabled={!isAdmin}
                 value={selectedRule}
                 onChange={(event) => setSelectedRule(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none"
               >
                 <option>No Masking</option>
                 <option>Fake Value</option>
@@ -3403,7 +6328,7 @@ const deleteLockedRule = async (columnName) => {
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-[13px] font-medium text-slate-700">
                 Developer Override
               </label>
 
@@ -3413,7 +6338,7 @@ const deleteLockedRule = async (columnName) => {
                 onChange={(event) =>
                   setDeveloperCanOverride(event.target.value === "Allowed")
                 }
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               >
                 <option>Not Allowed</option>
                 <option>Allowed</option>
@@ -3421,20 +6346,20 @@ const deleteLockedRule = async (columnName) => {
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-900">Persistence</p>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="text-[13px] font-medium text-slate-900">Persistence</p>
+              <p className="mt-2 text-[11px] text-slate-500">
                 Saved to backend JSON and reused after restart.
               </p>
             </div>
           </div>
 
           <div className="mt-4">
-            <label className="text-sm font-medium text-slate-700">Reason</label>
+            <label className="text-[13px] font-medium text-slate-700">Reason</label>
             <textarea
               disabled={!isAdmin}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               rows="3"
               placeholder="Enter why this rule should be locked for developers"
             />
@@ -3442,7 +6367,7 @@ const deleteLockedRule = async (columnName) => {
 
           {saveMessage && (
             <div
-              className={`mt-4 rounded-xl p-3 text-sm ${
+              className={`mt-4 rounded-xl p-3 text-[13px] ${
                 saveMessage.includes("successfully")
                   ? "bg-emerald-50 text-emerald-700"
                   : "bg-red-50 text-red-700"
@@ -3453,7 +6378,7 @@ const deleteLockedRule = async (columnName) => {
           )}
 
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1100px] text-left text-[13px]">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Column</th>
@@ -3491,18 +6416,18 @@ const deleteLockedRule = async (columnName) => {
                       </td>
 
                       <td className="px-4 py-3 min-w-[160px]">
-                        <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                        <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                           {rule.rule}
                         </span>
                       </td>
 
                       <td className="px-4 py-3">
                         {rule.developer_can_override ? (
-                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                             Allowed
                           </span>
                         ) : (
-                          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                          <span className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-medium text-red-700">
                             Not Allowed
                           </span>
                         )}
@@ -3518,7 +6443,7 @@ const deleteLockedRule = async (columnName) => {
 
                       <td className="px-4 py-3">
                         <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
                             rule.enabled
                               ? "bg-emerald-50 text-emerald-700"
                               : "bg-slate-100 text-slate-600"
@@ -3531,12 +6456,12 @@ const deleteLockedRule = async (columnName) => {
                         {isAdmin ? (
                           <button
                             onClick={() => deleteLockedRule(rule.column)}
-                            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100"
+                            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-medium text-red-700 transition hover:bg-red-100"
                           >
                             Delete
                           </button>
                         ) : (
-                          <span className="text-xs text-slate-400">View only</span>
+                          <span className="text-[11px] text-slate-400">View only</span>
                         )}
                       </td>
                     </tr>
@@ -3551,8 +6476,8 @@ const deleteLockedRule = async (columnName) => {
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Global Masking Rules</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-base font-semibold text-slate-900">Global Masking Rules</h2>
+              <p className="text-[13px] text-slate-500">
                 Default rules that can apply across all datasets unless overridden.
               </p>
             </div>
@@ -3563,7 +6488,7 @@ const deleteLockedRule = async (columnName) => {
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[950px] text-left text-sm">
+            <table className="w-full min-w-[950px] text-left text-[13px]">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Rule Name</th>
@@ -3581,14 +6506,14 @@ const deleteLockedRule = async (columnName) => {
                     <td className="px-4 py-3 font-medium text-slate-900">{rule.name}</td>
                     <td className="px-4 py-3 text-slate-700">{rule.scope}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">
                         {rule.ruleType}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{rule.condition}</td>
                     <td className="px-4 py-3 text-slate-600">{rule.output}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                         {rule.status}
                       </span>
                     </td>
@@ -3604,10 +6529,10 @@ const deleteLockedRule = async (columnName) => {
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 Table / Column Rule Assignment
               </h2>
-              <p className="text-sm text-slate-500">
+              <p className="text-[13px] text-slate-500">
                 Rule assignment structure aligned with classification, override, and tags.
               </p>
             </div>
@@ -3618,7 +6543,7 @@ const deleteLockedRule = async (columnName) => {
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-[13px]">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Table Name</th>
@@ -3637,13 +6562,13 @@ const deleteLockedRule = async (columnName) => {
                     <td className="px-4 py-3 font-medium text-slate-900">{rule.column}</td>
                     <td className="px-4 py-3 text-slate-700">{rule.classification}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white">
                         {rule.rule}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        className={`rounded-full px-3 py-1 text-[11px] font-medium ${
                           rule.override === "Restricted"
                             ? "bg-red-50 text-red-700"
                             : "bg-emerald-50 text-emerald-700"
@@ -3653,7 +6578,7 @@ const deleteLockedRule = async (columnName) => {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">
                         {rule.tag}
                       </span>
                     </td>
@@ -3666,23 +6591,23 @@ const deleteLockedRule = async (columnName) => {
                     <td className="px-4 py-3 font-medium text-slate-900">{rule.column}</td>
                     <td className="px-4 py-3 text-slate-700">Admin Locked Sensitive Field</td>
                     <td className="px-4 py-3 min-w-[160px]">
-                      <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-red-600 px-3 py-1 text-xs font-medium text-white">
+                      <span className="inline-flex w-fit whitespace-nowrap rounded-full bg-red-600 px-3 py-1 text-[11px] font-medium text-white">
                         {rule.rule}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       {rule.developer_can_override ? (
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700">
                           Allowed
                         </span>
                       ) : (
-                        <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                        <span className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-medium text-red-700">
                           Restricted
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">
                         CONFIDENTIAL
                       </span>
                     </td>
@@ -3698,10 +6623,10 @@ const deleteLockedRule = async (columnName) => {
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 Conditional Transform Rules
               </h2>
-              <p className="text-sm text-slate-500">
+              <p className="text-[13px] text-slate-500">
                 Business-condition based anonymization rules for more realistic enterprise scenarios.
               </p>
             </div>
@@ -3717,15 +6642,15 @@ const deleteLockedRule = async (columnName) => {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-slate-900">{rule.name}</p>
-                    <p className="mt-2 text-sm text-slate-500">{rule.condition}</p>
+                    <p className="mt-2 text-[13px] text-slate-500">{rule.condition}</p>
                   </div>
 
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                     Conditional
                   </span>
                 </div>
 
-                <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="mt-4 rounded-xl bg-slate-50 p-4 text-[13px] text-slate-600">
                   <p>
                     <span className="font-medium text-slate-900">Action:</span>{" "}
                     {rule.action}
@@ -3739,7 +6664,7 @@ const deleteLockedRule = async (columnName) => {
             ))}
           </div>
 
-          <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-[13px] text-slate-600">
             <p className="font-medium text-slate-900">MVP Note</p>
             <p className="mt-1">
               Admin locked rules are now stored by the backend and reused across sessions.
@@ -3845,7 +6770,14 @@ if (!backendSessionChecked) {
   return <LoginPage onLogin={handleLoginSuccess} />;
 }
 
-  const permissions = currentUser.permissions || [];
+  const permissions = [
+    ...(currentUser.permissions || []),
+    "workspaces",
+    "metadata_versions",
+    "source_connections",
+    "existing_pipelines",
+    "data_preview",
+  ];
 
   if (!permissions.includes(activePage)) {
     setActivePage("dashboard");
@@ -3855,6 +6787,12 @@ if (!backendSessionChecked) {
     if (activePage === "dashboard") return <DashboardPage />;
 
     if (activePage === "data_inventory") return <DataInventoryPage />;
+
+    if (activePage === "workspaces") return <WorkspacesPage />;
+
+    if (activePage === "metadata_versions") return <MetadataVersionsPage />;
+
+    if (activePage === "source_connections") return <SourceConnectionsPage />;
 
     if (activePage === "data_classification") return <DataClassificationPage />;
 
@@ -3896,24 +6834,9 @@ if (!backendSessionChecked) {
       );
     }
 
-    if (activePage === "data_preview") {
-      return (
-        <div className="space-y-6">
-          <PageHeader
-            title="Data Preview & Validation"
-            description="Validate anonymized output using before/after previews and audit summaries."
-            icon={TableProperties}
-          />
-          {currentJobId ? <ReviewStep jobId={currentJobId} /> : (
-            <Card className="rounded-2xl shadow-sm">
-              <CardContent className="p-6 text-sm text-slate-600">
-                No completed job selected yet. Create and run a pipeline first.
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      );
-    }
+    if (activePage === "data_preview") return <MaskedAssetsPage currentJobId={currentJobId} />;
+
+    if (activePage === "existing_pipelines") return <ExistingPipelinesPage />;
 
     const placeholderMap = {
       workspaces: {
@@ -3975,11 +6898,13 @@ if (!backendSessionChecked) {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div
-      className="grid gap-6 p-4 lg:p-6"
-      style={{
-        gridTemplateColumns: isMenuCollapsed ? "96px 1fr" : "320px 1fr",
-      }}
-    >
+        className="grid min-w-0 max-w-full gap-4 overflow-x-hidden p-3 lg:p-4"
+        style={{
+          gridTemplateColumns: isMenuCollapsed
+            ? "76px minmax(0, 1fr)"
+            : "260px minmax(0, 1fr)",
+        }}
+      >
         <EnterpriseSideMenu
           currentUser={currentUser}
           activePage={activePage}
@@ -3988,13 +6913,13 @@ if (!backendSessionChecked) {
           setIsMenuCollapsed={setIsMenuCollapsed}
         />
 
-        <main className="space-y-6">
+        <main className="min-w-0 space-y-6 overflow-hidden">
           <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-[13px] font-medium text-slate-900">
                 {currentUser.name}
               </p>
-              <p className="text-xs capitalize text-slate-500">
+              <p className="text-[11px] capitalize text-slate-500">
                 Role: {currentUser.role} · Active Page: {activePage.replaceAll("_", " ")}
               </p>
             </div>

@@ -8,6 +8,7 @@ import os
 import pandas as pd
 import json
 import zipfile
+import re
 
 from masking_engine import run_local_anonymization
 from test_data_generator import generate_test_data
@@ -28,11 +29,19 @@ app.add_middleware(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+DATASET_REGISTRY_FILE = os.path.join(DATA_DIR, "datasets_registry.json")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
 GENERATED_DIR = os.path.join(DATA_DIR, "generated")
 RULES_DIR = os.path.join(DATA_DIR, "rules")
 RULES_FILE = os.path.join(RULES_DIR, "admin_locked_rules.json")
+SANDBOX_DIR = os.path.join(DATA_DIR, "sandboxes")
+SANDBOX_FILE = os.path.join(SANDBOX_DIR, "sandboxes.json")
+METADATA_VERSION_DIR = os.path.join(DATA_DIR, "metadata_versions")
+METADATA_VERSION_FILE = os.path.join(METADATA_VERSION_DIR, "metadata_versions.json")
+
+os.makedirs(SANDBOX_DIR, exist_ok=True)
+os.makedirs(METADATA_VERSION_DIR, exist_ok=True)
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -71,11 +80,6 @@ class SourceTableSelection(BaseModel):
     row_count: int = 100
 
 
-class GenerateFromSourceRequest(BaseModel):
-    source: str
-    database: str
-    tables: list[SourceTableSelection]
-
 class MultiDatasetRunItem(BaseModel):
     dataset_id: str
     masking_rules: dict
@@ -84,6 +88,348 @@ class MultiDatasetRunItem(BaseModel):
 class RunMultipleJobsRequest(BaseModel):
     datasets: list[MultiDatasetRunItem]
     user_role: str = "developer"
+
+
+class PreRunValidationDatasetItem(BaseModel):
+    dataset_id: str
+    masking_rules: dict = {}
+
+
+class PreRunValidationRequest(BaseModel):
+    datasets: list[PreRunValidationDatasetItem]
+    user_role: str = "developer"
+
+
+class SandboxCreateRequest(BaseModel):
+    owner: str
+    project_id: str
+    target_environment: str = "DEV"
+    source_system: str = "SQL Server PROD"
+    source_database: str = "DDB"
+    source_schema: str = "dbo"
+    sandbox_schema: str | None = None
+    selected_tables: list[str] = []
+
+
+class SandboxTableUpdateRequest(BaseModel):
+    selected_tables: list[str]
+
+
+class MetadataVersionCreateRequest(BaseModel):
+    sandbox_id: str
+    source_metadata_database: str = "healthcare_catalog.patient_schema"
+    selected_tables: list[str] = []
+    version_label: str | None = None
+    change_summary: str = "Initial metadata snapshot for project sandbox."
+
+
+class MetadataDriftValidationRequest(BaseModel):
+    drift_mode: str = "no_drift"  # no_drift, additive, breaking
+
+
+class MetadataVersionSuccessorRequest(BaseModel):
+    drift_mode: str = "additive"
+    change_summary: str = "Created updated metadata version after schema drift review."
+
+
+class GenerateFromSourceRequest(BaseModel):
+    source: str
+    database: str
+    tables: list[SourceTableSelection]
+    sandbox_id: str | None = None
+
+
+def load_sandboxes():
+    if not os.path.exists(SANDBOX_FILE):
+        return {}
+
+    with open(SANDBOX_FILE, "r") as file:
+        return json.load(file)
+
+
+def save_sandboxes(sandboxes):
+    with open(SANDBOX_FILE, "w") as file:
+        json.dump(sandboxes, file, indent=2)
+
+
+def normalize_schema_name(value: str):
+    value = value.strip().lower()
+    value = re.sub(r"[^a-z0-9_]+", "_", value)
+    value = re.sub(r"_+", "_", value)
+    return value.strip("_")
+
+
+def build_default_sandbox_schema(owner: str, project_id: str, target_environment: str):
+    owner_part = normalize_schema_name(owner)
+    project_part = normalize_schema_name(project_id)
+    env_part = normalize_schema_name(target_environment)
+
+    return f"{owner_part}_{project_part}_{env_part}_schema"
+
+
+def load_metadata_versions():
+    if not os.path.exists(METADATA_VERSION_FILE):
+        return {}
+
+    try:
+        with open(METADATA_VERSION_FILE, "r") as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_metadata_versions(metadata_versions):
+    with open(METADATA_VERSION_FILE, "w") as file:
+        json.dump(metadata_versions, file, indent=2)
+
+
+def build_metadata_snapshot(source_metadata_database: str, selected_tables: list[str]):
+    if source_metadata_database not in MOCK_DATABRICKS_METADATA:
+        raise ValueError("Selected source metadata database not found.")
+
+    if not selected_tables:
+        raise ValueError("At least one table is required to create metadata version.")
+
+    snapshot = {}
+
+    for table_name in selected_tables:
+        if table_name not in MOCK_DATABRICKS_METADATA[source_metadata_database]:
+            raise ValueError(f"Table not found in source metadata: {table_name}")
+
+        snapshot[table_name] = [
+            {
+                "name": column["name"],
+                "type": column.get("type", "string"),
+                "suggested_rule": suggest_rule_for_column(column["name"]),
+            }
+            for column in MOCK_DATABRICKS_METADATA[source_metadata_database][table_name]
+        ]
+
+    return snapshot
+
+
+def simulate_current_metadata_snapshot(saved_snapshot: dict, drift_mode: str):
+    current_snapshot = json.loads(json.dumps(saved_snapshot))
+
+    if drift_mode == "no_drift":
+        return current_snapshot
+
+    if drift_mode == "additive":
+        for table_name, columns in current_snapshot.items():
+            existing_names = {column["name"] for column in columns}
+
+            for new_column in [
+                {"name": "new_source_system", "type": "string", "suggested_rule": "No Masking"},
+                {"name": "new_ingestion_timestamp", "type": "timestamp", "suggested_rule": "No Masking"},
+            ]:
+                if new_column["name"] not in existing_names:
+                    columns.append(new_column)
+
+        return current_snapshot
+
+    if drift_mode == "breaking":
+        for table_name, columns in current_snapshot.items():
+            if not columns:
+                continue
+
+            removed_column = columns[-1]
+            current_snapshot[table_name] = columns[:-1]
+            current_snapshot[table_name].append({
+                "name": f"{removed_column['name']}_renamed",
+                "type": removed_column.get("type", "string"),
+                "suggested_rule": removed_column.get("suggested_rule", "No Masking"),
+            })
+            break
+
+        return current_snapshot
+
+    return current_snapshot
+
+
+def compare_metadata_snapshots(saved_snapshot: dict, current_snapshot: dict):
+    table_results = []
+    blockers = []
+    warnings = []
+
+    saved_tables = set(saved_snapshot.keys())
+    current_tables = set(current_snapshot.keys())
+
+    removed_tables = sorted(list(saved_tables - current_tables))
+    new_tables = sorted(list(current_tables - saved_tables))
+
+    if removed_tables:
+        blockers.append("One or more tables from the saved metadata version are missing in the current source metadata.")
+
+    if new_tables:
+        warnings.append("New tables are available in the source metadata. Existing pipelines can continue.")
+
+    for table_name in sorted(saved_tables.union(current_tables)):
+        saved_columns = saved_snapshot.get(table_name, [])
+        current_columns = current_snapshot.get(table_name, [])
+
+        saved_column_map = {column["name"]: column for column in saved_columns}
+        current_column_map = {column["name"]: column for column in current_columns}
+
+        saved_column_names = set(saved_column_map.keys())
+        current_column_names = set(current_column_map.keys())
+
+        missing_columns = sorted(list(saved_column_names - current_column_names))
+        new_columns = sorted(list(current_column_names - saved_column_names))
+
+        type_changes = []
+        for column_name in sorted(saved_column_names.intersection(current_column_names)):
+            saved_type = saved_column_map[column_name].get("type")
+            current_type = current_column_map[column_name].get("type")
+
+            if saved_type != current_type:
+                type_changes.append({
+                    "column": column_name,
+                    "saved_type": saved_type,
+                    "current_type": current_type,
+                })
+
+        possible_renames = []
+        if missing_columns and new_columns:
+            possible_renames = [
+                {"missing_column": missing_columns[0], "possible_new_column": new_columns[0]}
+            ]
+
+        table_status = "PASSED"
+        if missing_columns or type_changes or table_name in removed_tables:
+            table_status = "BLOCKED"
+        elif new_columns or table_name in new_tables:
+            table_status = "WARNING"
+
+        if missing_columns:
+            blockers.append(f"{table_name}: saved metadata columns are missing or renamed.")
+
+        if type_changes:
+            blockers.append(f"{table_name}: column data types changed and require review.")
+
+        if new_columns:
+            warnings.append(f"{table_name}: new columns were added. Existing pipeline can continue.")
+
+        table_results.append({
+            "table_name": table_name,
+            "status": table_status,
+            "saved_column_count": len(saved_columns),
+            "current_column_count": len(current_columns),
+            "new_columns": new_columns,
+            "missing_columns": missing_columns,
+            "type_changes": type_changes,
+            "possible_renames": possible_renames,
+        })
+
+    if blockers:
+        overall_status = "BLOCKED"
+        can_run = False
+        drift_type = "BREAKING_DRIFT"
+        summary = "Breaking schema drift detected. Existing metadata columns are missing, renamed, or structurally changed."
+        mitigation = [
+            "Stop execution for impacted pipeline version.",
+            "Create a successor metadata version from the current source schema.",
+            "Review missing or renamed columns and remap masking rules.",
+            "Re-run validation before execution.",
+        ]
+    elif warnings:
+        overall_status = "WARNING"
+        can_run = True
+        drift_type = "ADDITIVE_DRIFT"
+        summary = "Only additive schema drift detected. New columns exist, but saved metadata columns are still present."
+        mitigation = [
+            "Allow existing pipeline to continue without intervention.",
+            "Optionally create a new metadata version to include the new columns.",
+            "Review masking rules for newly added columns before using them.",
+        ]
+    else:
+        overall_status = "PASSED"
+        can_run = True
+        drift_type = "NO_DRIFT"
+        summary = "Current source metadata matches the saved metadata version."
+        mitigation = ["No action required. Pipeline can run."]
+
+    return {
+        "overall_status": overall_status,
+        "can_run": can_run,
+        "drift_type": drift_type,
+        "summary": summary,
+        "tables": table_results,
+        "warnings": sorted(list(set(warnings))),
+        "blockers": sorted(list(set(blockers))),
+        "mitigation": mitigation,
+    }
+
+
+def get_next_metadata_version_label(metadata_versions):
+    existing_numbers = []
+
+    for version in metadata_versions.values():
+        label = str(version.get("version_label", "")).upper().replace("V", "")
+        if label.isdigit():
+            existing_numbers.append(int(label))
+
+    next_number = max(existing_numbers, default=0) + 1
+    return f"V{next_number}"
+
+
+def create_metadata_version_record(sandbox, source_metadata_database, selected_tables, version_label, change_summary, metadata_snapshot):
+    metadata_versions = load_metadata_versions()
+
+    version_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+
+    version = {
+        "metadata_version_id": version_id,
+        "version_label": version_label or get_next_metadata_version_label(metadata_versions),
+        "sandbox_id": sandbox["sandbox_id"],
+        "sandbox_schema": sandbox.get("sandbox_schema"),
+        "owner": sandbox.get("owner"),
+        "project_id": sandbox.get("project_id"),
+        "target_environment": sandbox.get("target_environment"),
+        "source_system": sandbox.get("source_system"),
+        "source_database": sandbox.get("source_database"),
+        "source_schema": sandbox.get("source_schema"),
+        "source_metadata_database": source_metadata_database,
+        "selected_tables": selected_tables,
+        "metadata_snapshot": metadata_snapshot,
+        "table_count": len(selected_tables),
+        "column_count": sum(len(columns) for columns in metadata_snapshot.values()),
+        "status": "ACTIVE",
+        "change_summary": change_summary,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    metadata_versions[version_id] = version
+    save_metadata_versions(metadata_versions)
+
+    sandboxes = load_sandboxes()
+    if sandbox["sandbox_id"] in sandboxes:
+        sandboxes[sandbox["sandbox_id"]]["active_metadata_version_id"] = version_id
+        sandboxes[sandbox["sandbox_id"]]["active_metadata_version_label"] = version["version_label"]
+        sandboxes[sandbox["sandbox_id"]]["updated_at"] = now
+        save_sandboxes(sandboxes)
+
+    return version
+
+
+def load_dataset_registry():
+    if not os.path.exists(DATASET_REGISTRY_FILE):
+        return {}
+
+    try:
+        with open(DATASET_REGISTRY_FILE, "r") as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_dataset_registry(dataset_registry):
+    with open(DATASET_REGISTRY_FILE, "w") as file:
+        json.dump(dataset_registry, file, indent=2)
+
+
+datasets.update(load_dataset_registry())
 
 def suggest_rule_for_column(column_name):
     col = column_name.lower().strip()
@@ -191,6 +537,468 @@ def apply_admin_locked_rules(dataset, masking_rules, user_role):
     return final_rules, enforced_rules
 
 
+def _as_validation_item_dict(item):
+    if isinstance(item, dict):
+        return item
+
+    return {
+        "dataset_id": item.dataset_id,
+        "masking_rules": item.masking_rules,
+    }
+
+
+def validate_pre_run_internal(validation_items, user_role="developer"):
+    checks = []
+    warnings = []
+    blockers = []
+    selected_dataset_ids = []
+    selected_sandbox_ids = set()
+    selected_sandbox_schemas = set()
+    selected_table_names = set()
+    total_pii_columns = 0
+    masked_pii_columns = 0
+    unmasked_pii_columns = []
+    admin_locked_matches = []
+
+    items = [_as_validation_item_dict(item) for item in validation_items]
+
+    if not items:
+        return {
+            "overall_status": "BLOCKED",
+            "can_run": False,
+            "summary": "No datasets selected for execution.",
+            "checks": [
+                {
+                    "name": "Dataset Selection",
+                    "status": "BLOCKED",
+                    "message": "Please select at least one generated dataset before running.",
+                    "details": [],
+                }
+            ],
+            "metrics": {},
+            "warnings": [],
+            "blockers": ["No datasets selected for execution."],
+        }
+
+    # Dataset readiness and sandbox collection
+    missing_dataset_ids = []
+    missing_files = []
+    datasets_without_sandbox = []
+
+    for item in items:
+        dataset_id = item.get("dataset_id")
+        selected_dataset_ids.append(dataset_id)
+
+        if dataset_id not in datasets:
+            missing_dataset_ids.append(dataset_id)
+            continue
+
+        dataset = datasets[dataset_id]
+        input_path = dataset.get("input_path")
+
+        if not input_path or not os.path.exists(input_path):
+            missing_files.append(dataset.get("filename") or dataset_id)
+
+        sandbox_id = dataset.get("sandbox_id")
+        sandbox_schema = dataset.get("sandbox_schema")
+        table_name = dataset.get("table_name") or dataset.get("filename") or dataset_id
+
+        if not sandbox_id:
+            datasets_without_sandbox.append(table_name)
+        else:
+            selected_sandbox_ids.add(sandbox_id)
+
+        if sandbox_schema:
+            selected_sandbox_schemas.add(sandbox_schema)
+
+        if table_name:
+            selected_table_names.add(table_name)
+
+    if missing_dataset_ids:
+        blockers.append("Some selected datasets are no longer registered in the backend dataset registry.")
+        checks.append({
+            "name": "Dataset Registry",
+            "status": "BLOCKED",
+            "message": "One or more dataset IDs were not found.",
+            "details": missing_dataset_ids,
+        })
+    else:
+        checks.append({
+            "name": "Dataset Registry",
+            "status": "PASSED",
+            "message": "All selected datasets are registered and available.",
+            "details": selected_dataset_ids,
+        })
+
+    if missing_files:
+        blockers.append("Some generated input files are missing from disk.")
+        checks.append({
+            "name": "Generated Data Files",
+            "status": "BLOCKED",
+            "message": "One or more generated input files are missing.",
+            "details": missing_files,
+        })
+    else:
+        checks.append({
+            "name": "Generated Data Files",
+            "status": "PASSED",
+            "message": "Generated input files are available for execution.",
+            "details": [],
+        })
+
+    if datasets_without_sandbox:
+        blockers.append("Sandbox context is missing for one or more datasets.")
+        checks.append({
+            "name": "Sandbox Context",
+            "status": "BLOCKED",
+            "message": "Every pipeline execution must be scoped to an isolated sandbox.",
+            "details": datasets_without_sandbox,
+        })
+    elif len(selected_sandbox_ids) > 1:
+        blockers.append("Selected datasets belong to multiple sandboxes.")
+        checks.append({
+            "name": "Sandbox Context",
+            "status": "BLOCKED",
+            "message": "Please run one sandbox at a time to maintain isolation.",
+            "details": sorted(list(selected_sandbox_schemas)),
+        })
+    else:
+        checks.append({
+            "name": "Sandbox Isolation",
+            "status": "PASSED",
+            "message": "All selected datasets are scoped to a single isolated sandbox.",
+            "details": sorted(list(selected_sandbox_schemas)),
+        })
+
+    # Overlap awareness across other sandboxes
+    overlap_details = []
+    if selected_sandbox_ids:
+        active_sandbox_id = next(iter(selected_sandbox_ids))
+        sandboxes = load_sandboxes()
+
+        for sandbox_id, sandbox in sandboxes.items():
+            if sandbox_id == active_sandbox_id:
+                continue
+
+            other_tables = set(sandbox.get("selected_tables", []))
+            overlap = sorted(list(selected_table_names.intersection(other_tables)))
+
+            if overlap:
+                overlap_details.append({
+                    "sandbox_schema": sandbox.get("sandbox_schema"),
+                    "owner": sandbox.get("owner"),
+                    "project_id": sandbox.get("project_id"),
+                    "overlapping_tables": overlap,
+                })
+
+    if overlap_details:
+        checks.append({
+            "name": "Cross-Sandbox Overlap",
+            "status": "PASSED",
+            "message": "Overlapping tables exist in other sandboxes, but changes are isolated by sandbox_id and sandbox_schema.",
+            "details": overlap_details,
+        })
+    else:
+        checks.append({
+            "name": "Cross-Sandbox Overlap",
+            "status": "PASSED",
+            "message": "No overlapping tables found in other sandboxes for this run scope.",
+            "details": [],
+        })
+
+    # Metadata version governance check
+    if selected_sandbox_ids:
+        active_sandbox_id = next(iter(selected_sandbox_ids))
+        sandboxes = load_sandboxes()
+        active_sandbox = sandboxes.get(active_sandbox_id, {})
+        active_metadata_version_id = active_sandbox.get("active_metadata_version_id")
+        active_metadata_version_label = active_sandbox.get("active_metadata_version_label")
+
+        if not active_metadata_version_id:
+            warnings.append("No active metadata version is linked to the selected sandbox.")
+            checks.append({
+                "name": "Source Metadata Version",
+                "status": "WARNING",
+                "message": "No active metadata version is linked. Execution can continue for MVP, but enterprise governance should create a metadata version first.",
+                "details": [],
+            })
+        else:
+            metadata_versions = load_metadata_versions()
+            metadata_version = metadata_versions.get(active_metadata_version_id)
+
+            if not metadata_version:
+                blockers.append("Active metadata version reference is invalid or missing from registry.")
+                checks.append({
+                    "name": "Source Metadata Version",
+                    "status": "BLOCKED",
+                    "message": "The sandbox points to a metadata version that no longer exists.",
+                    "details": [active_metadata_version_id],
+                })
+            else:
+                checks.append({
+                    "name": "Source Metadata Version",
+                    "status": "PASSED",
+                    "message": f"Active source metadata version {active_metadata_version_label or metadata_version.get('version_label')} is linked to this sandbox/project.",
+                    "details": {
+                        "metadata_version_id": active_metadata_version_id,
+                        "version_label": metadata_version.get("version_label"),
+                        "project_id": metadata_version.get("project_id"),
+                        "table_count": metadata_version.get("table_count"),
+                        "column_count": metadata_version.get("column_count"),
+                    },
+                })
+
+    # Masking risk check
+    admin_locked_rules = load_admin_locked_rules()
+
+    for item in items:
+        dataset_id = item.get("dataset_id")
+
+        if dataset_id not in datasets:
+            continue
+
+        dataset = datasets[dataset_id]
+        table_name = dataset.get("table_name") or dataset.get("filename") or dataset_id
+        rules = item.get("masking_rules") or {}
+
+        for column in dataset.get("columns", []):
+            column_name = column.get("name")
+            is_pii = bool(column.get("pii"))
+            suggested_rule = column.get("ai_suggested_rule") or column.get("rule") or "No Masking"
+            selected_rule = rules.get(column_name, column.get("rule") or "No Masking")
+
+            if is_pii:
+                total_pii_columns += 1
+
+                if selected_rule and selected_rule != "No Masking":
+                    masked_pii_columns += 1
+                else:
+                    unmasked_pii_columns.append({
+                        "table_name": table_name,
+                        "column": column_name,
+                        "suggested_rule": suggested_rule,
+                        "selected_rule": selected_rule,
+                    })
+
+            for locked_rule in admin_locked_rules:
+                if not locked_rule.get("enabled", True):
+                    continue
+
+                if locked_rule.get("column", "").lower() == str(column_name).lower():
+                    admin_locked_matches.append({
+                        "table_name": table_name,
+                        "column": column_name,
+                        "enforced_rule": locked_rule.get("rule"),
+                        "reason": locked_rule.get("reason"),
+                    })
+
+    if unmasked_pii_columns:
+        blockers.append("Some PII columns are currently set to No Masking.")
+        checks.append({
+            "name": "PII Rule Coverage",
+            "status": "BLOCKED",
+            "message": "Sensitive columns require masking before execution.",
+            "details": unmasked_pii_columns,
+        })
+    else:
+        checks.append({
+            "name": "PII Rule Coverage",
+            "status": "PASSED",
+            "message": "All detected PII columns have masking rules configured.",
+            "details": [],
+        })
+
+    checks.append({
+        "name": "Admin Locked Rules",
+        "status": "PASSED",
+        "message": f"{len(admin_locked_matches)} admin locked rule match(es) will be respected during execution.",
+        "details": admin_locked_matches,
+    })
+
+    if blockers:
+        overall_status = "BLOCKED"
+        can_run = False
+        summary = "Pre-run validation blocked execution. Please resolve the highlighted items before running."
+    elif warnings:
+        overall_status = "WARNING"
+        can_run = True
+        summary = "Pre-run validation completed with warnings. Execution is allowed."
+    else:
+        overall_status = "READY"
+        can_run = True
+        summary = "Pre-run validation passed. Pipeline is ready to execute inside the selected sandbox."
+
+    return {
+        "overall_status": overall_status,
+        "can_run": can_run,
+        "summary": summary,
+        "checks": checks,
+        "metrics": {
+            "datasets_selected": len(items),
+            "tables_selected": len(selected_table_names),
+            "sandbox_count": len(selected_sandbox_ids),
+            "pii_columns_detected": total_pii_columns,
+            "pii_columns_masked": masked_pii_columns,
+            "unmasked_pii_columns": len(unmasked_pii_columns),
+            "admin_locked_rule_matches": len(admin_locked_matches),
+            "overlap_sandboxes": len(overlap_details),
+        },
+        "warnings": warnings,
+        "blockers": blockers,
+    }
+
+
+@app.post("/agents/pre-run-validation")
+def pre_run_validation_agent(request: PreRunValidationRequest):
+    validation = validate_pre_run_internal(
+        validation_items=request.datasets,
+        user_role=request.user_role,
+    )
+
+    return {
+        "status": "SUCCESS",
+        "agent_name": "Pre-Run Validation Agent",
+        "validation": validation,
+    }
+
+
+@app.get("/metadata/versions")
+def get_metadata_versions(sandbox_id: str | None = None):
+    metadata_versions = load_metadata_versions()
+    version_list = list(metadata_versions.values())
+
+    if sandbox_id:
+        version_list = [
+            version for version in version_list
+            if version.get("sandbox_id") == sandbox_id
+        ]
+
+    version_list = sorted(
+        version_list,
+        key=lambda version: version.get("created_at", ""),
+        reverse=True,
+    )
+
+    return {
+        "status": "SUCCESS",
+        "count": len(version_list),
+        "versions": version_list,
+    }
+
+
+@app.post("/metadata/versions/from-sandbox")
+def create_metadata_version_from_sandbox(request: MetadataVersionCreateRequest):
+    sandboxes = load_sandboxes()
+
+    if request.sandbox_id not in sandboxes:
+        return {
+            "status": "FAILED",
+            "message": "Sandbox not found. Please create or select a valid sandbox.",
+        }
+
+    sandbox = sandboxes[request.sandbox_id]
+    selected_tables = request.selected_tables or sandbox.get("selected_tables", [])
+
+    try:
+        metadata_snapshot = build_metadata_snapshot(
+            request.source_metadata_database,
+            selected_tables,
+        )
+
+        version = create_metadata_version_record(
+            sandbox=sandbox,
+            source_metadata_database=request.source_metadata_database,
+            selected_tables=selected_tables,
+            version_label=request.version_label,
+            change_summary=request.change_summary,
+            metadata_snapshot=metadata_snapshot,
+        )
+
+        return {
+            "status": "SUCCESS",
+            "message": "Metadata version created and linked to sandbox successfully.",
+            "version": version,
+        }
+
+    except Exception as e:
+        return {
+            "status": "FAILED",
+            "message": str(e),
+        }
+
+
+@app.post("/metadata/versions/{version_id}/validate-drift")
+def validate_metadata_version_drift(version_id: str, request: MetadataDriftValidationRequest):
+    metadata_versions = load_metadata_versions()
+
+    if version_id not in metadata_versions:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Metadata version not found.",
+        }
+
+    version = metadata_versions[version_id]
+    saved_snapshot = version.get("metadata_snapshot", {})
+    current_snapshot = simulate_current_metadata_snapshot(saved_snapshot, request.drift_mode)
+    validation = compare_metadata_snapshots(saved_snapshot, current_snapshot)
+
+    return {
+        "status": "SUCCESS",
+        "metadata_version_id": version_id,
+        "version_label": version.get("version_label"),
+        "project_id": version.get("project_id"),
+        "sandbox_schema": version.get("sandbox_schema"),
+        "drift_mode": request.drift_mode,
+        "validation": validation,
+    }
+
+
+@app.post("/metadata/versions/{version_id}/create-successor")
+def create_successor_metadata_version(version_id: str, request: MetadataVersionSuccessorRequest):
+    metadata_versions = load_metadata_versions()
+
+    if version_id not in metadata_versions:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Metadata version not found.",
+        }
+
+    previous_version = metadata_versions[version_id]
+    sandbox_id = previous_version.get("sandbox_id")
+    sandboxes = load_sandboxes()
+
+    if sandbox_id not in sandboxes:
+        return {
+            "status": "FAILED",
+            "message": "Linked sandbox not found for this metadata version.",
+        }
+
+    current_snapshot = simulate_current_metadata_snapshot(
+        previous_version.get("metadata_snapshot", {}),
+        request.drift_mode,
+    )
+
+    metadata_versions[version_id]["status"] = "SUPERSEDED"
+    metadata_versions[version_id]["updated_at"] = datetime.now().isoformat()
+    save_metadata_versions(metadata_versions)
+
+    new_version = create_metadata_version_record(
+        sandbox=sandboxes[sandbox_id],
+        source_metadata_database=previous_version.get("source_metadata_database"),
+        selected_tables=list(current_snapshot.keys()),
+        version_label=None,
+        change_summary=request.change_summary,
+        metadata_snapshot=current_snapshot,
+    )
+
+    return {
+        "status": "SUCCESS",
+        "message": "Successor metadata version created. Previous version is preserved and marked as superseded.",
+        "previous_version_id": version_id,
+        "new_version": new_version,
+    }
+
+
 @app.get("/")
 def health_check():
     return {
@@ -248,7 +1056,6 @@ def update_admin_locked_rule(request: UpdateLockedRuleRequest):
         "rules": rules,
     }
 
-
 @app.delete("/admin-locked-rules/{column_name}")
 def delete_admin_locked_rule(column_name: str, user_role: str = "developer"):
     if user_role != "admin":
@@ -279,7 +1086,148 @@ def delete_admin_locked_rule(column_name: str, user_role: str = "developer"):
         "rules": updated_rules,
     }
 
+@app.get("/sandboxes")
+def get_sandboxes():
+    sandboxes = load_sandboxes()
 
+    return {
+        "status": "SUCCESS",
+        "sandboxes": list(sandboxes.values()),
+    }
+
+
+@app.post("/sandboxes")
+def create_sandbox(request: SandboxCreateRequest):
+    sandboxes = load_sandboxes()
+
+    sandbox_id = str(uuid.uuid4())
+
+    sandbox_schema = request.sandbox_schema or build_default_sandbox_schema(
+        request.owner,
+        request.project_id,
+        request.target_environment,
+    )
+
+    sandbox = {
+        "sandbox_id": sandbox_id,
+        "sandbox_schema": sandbox_schema,
+        "owner": request.owner,
+        "project_id": request.project_id,
+        "target_environment": request.target_environment,
+        "source_system": request.source_system,
+        "source_database": request.source_database,
+        "source_schema": request.source_schema,
+        "selected_tables": request.selected_tables,
+        "status": "ACTIVE",
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "isolation_status": "ISOLATED",
+    }
+
+    sandboxes[sandbox_id] = sandbox
+    save_sandboxes(sandboxes)
+
+    return {
+        "status": "SUCCESS",
+        "message": "Sandbox created successfully.",
+        "sandbox": sandbox,
+    }
+
+
+@app.get("/sandboxes/{sandbox_id}")
+def get_sandbox(sandbox_id: str):
+    sandboxes = load_sandboxes()
+
+    if sandbox_id not in sandboxes:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Sandbox not found.",
+        }
+
+    return {
+        "status": "SUCCESS",
+        "sandbox": sandboxes[sandbox_id],
+    }
+
+
+@app.put("/sandboxes/{sandbox_id}/tables")
+def update_sandbox_tables(sandbox_id: str, request: SandboxTableUpdateRequest):
+    sandboxes = load_sandboxes()
+
+    if sandbox_id not in sandboxes:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Sandbox not found.",
+        }
+
+    sandboxes[sandbox_id]["selected_tables"] = request.selected_tables
+    sandboxes[sandbox_id]["updated_at"] = datetime.now().isoformat()
+
+    save_sandboxes(sandboxes)
+
+    return {
+        "status": "SUCCESS",
+        "message": "Sandbox tables updated successfully.",
+        "sandbox": sandboxes[sandbox_id],
+    }
+
+
+@app.delete("/sandboxes/{sandbox_id}/datasets/{dataset_id}")
+def delete_sandbox_dataset(sandbox_id: str, dataset_id: str):
+    sandboxes = load_sandboxes()
+
+    if sandbox_id not in sandboxes:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Sandbox not found.",
+        }
+
+    if dataset_id not in datasets:
+        return {
+            "status": "NOT_FOUND",
+            "message": "Generated dataset not found in the dataset registry. Regenerate or refresh the selected sandbox data.",
+        }
+
+    dataset = datasets[dataset_id]
+
+    if dataset.get("sandbox_id") != sandbox_id:
+        return {
+            "status": "FAILED",
+            "message": "This dataset does not belong to the selected sandbox.",
+        }
+
+    table_name = dataset.get("table_name")
+    input_path = dataset.get("input_path")
+    output_path = dataset.get("output_path")
+
+    if input_path and os.path.exists(input_path):
+        os.remove(input_path)
+
+    if output_path and os.path.exists(output_path):
+        os.remove(output_path)
+
+    del datasets[dataset_id]
+    save_dataset_registry(datasets)
+
+    remaining_table_exists = any(
+        existing_dataset.get("sandbox_id") == sandbox_id
+        and existing_dataset.get("table_name") == table_name
+        for existing_dataset in datasets.values()
+    )
+
+    if table_name and not remaining_table_exists:
+        existing_tables = sandboxes[sandbox_id].get("selected_tables", [])
+        sandboxes[sandbox_id]["selected_tables"] = [
+            table for table in existing_tables if table != table_name
+        ]
+        sandboxes[sandbox_id]["updated_at"] = datetime.now().isoformat()
+        save_sandboxes(sandboxes)
+
+    return {
+        "status": "SUCCESS",
+        "message": f"Deleted generated table data for {table_name} from the selected sandbox.",
+        "sandbox": sandboxes[sandbox_id],
+    }
 
 DEMO_USERS = {
     "admin@tdm.com": {
@@ -289,6 +1237,7 @@ DEMO_USERS = {
         "permissions": [
             "dashboard",
             "data_inventory",
+            "sandbox_manager",
             "source_connections",
             "data_classification",
             "masking_rules",
@@ -309,6 +1258,7 @@ DEMO_USERS = {
         "permissions": [
             "dashboard",
             "data_inventory",
+            "sandbox_manager",
             "data_classification",
             "masking_rules",
             "create_pipeline",
@@ -521,6 +1471,8 @@ async def upload_file(file: UploadFile = File(...)):
         "columns": detected_columns,
     }
 
+    save_dataset_registry(datasets)
+
     return {
         "status": "SUCCESS",
         "message": "File uploaded successfully",
@@ -560,6 +1512,8 @@ def generate_test_dataset(request: GenerateTestDataRequest):
             "columns": detected_columns,
         }
 
+        save_dataset_registry(datasets)
+
         return {
             "status": "SUCCESS",
             "message": "Test data generated successfully",
@@ -592,11 +1546,25 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
                 "message": "Selected database not found.",
             }
 
+        sandbox = None
+
+        if request.sandbox_id:
+            sandboxes = load_sandboxes()
+
+            if request.sandbox_id not in sandboxes:
+                return {
+                    "status": "FAILED",
+                    "message": "Invalid sandbox ID. Please select or create a valid sandbox.",
+                }
+
+            sandbox = sandboxes[request.sandbox_id]
+
         generated_datasets = []
 
         for table_selection in request.tables:
             table_name = table_selection.table_name
             selected_columns = table_selection.selected_columns
+            table_row_count = table_selection.row_count
 
             if table_name not in MOCK_DATABRICKS_METADATA[request.database]:
                 return {
@@ -610,11 +1578,18 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
                     "message": f"No columns selected for table: {table_name}",
                 }
 
+            if table_row_count <= 0:
+                return {
+                    "status": "FAILED",
+                    "message": f"Row count must be greater than 0 for table: {table_name}",
+                }
+
             source_columns = MOCK_DATABRICKS_METADATA[request.database][table_name]
             valid_column_names = [column["name"] for column in source_columns]
 
             invalid_columns = [
-                column for column in selected_columns
+                column
+                for column in selected_columns
                 if column not in valid_column_names
             ]
 
@@ -625,8 +1600,6 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
                 }
 
             generated_rows = []
-
-            table_row_count = table_selection.row_count
 
             for index in range(1, table_row_count + 1):
                 row = {}
@@ -640,6 +1613,7 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
 
             dataset_id = str(uuid.uuid4())
             filename = f"generated_{table_name}_{table_row_count}_rows.csv"
+
             input_path = os.path.join(GENERATED_DIR, f"{dataset_id}_{filename}")
             output_path = os.path.join(OUTPUT_DIR, f"masked_{dataset_id}_{filename}")
 
@@ -647,7 +1621,7 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
 
             detected_columns = detect_columns_from_csv(input_path)
 
-            datasets[dataset_id] = {
+            dataset_metadata = {
                 "dataset_id": dataset_id,
                 "filename": filename,
                 "source_type": "databricks_schema_generated",
@@ -658,7 +1632,17 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
                 "output_path": output_path,
                 "uploaded_at": datetime.now().isoformat(),
                 "columns": detected_columns,
+
+                # Sandbox isolation metadata
+                "sandbox_id": request.sandbox_id,
+                "sandbox_schema": sandbox["sandbox_schema"] if sandbox else None,
+                "sandbox_owner": sandbox["owner"] if sandbox else None,
+                "project_id": sandbox["project_id"] if sandbox else None,
+                "target_environment": sandbox["target_environment"] if sandbox else None,
+                "isolation_status": "ISOLATED" if sandbox else "NO_SANDBOX",
             }
+
+            datasets[dataset_id] = dataset_metadata
 
             generated_datasets.append({
                 "dataset_id": dataset_id,
@@ -668,11 +1652,41 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
                 "table_name": table_name,
                 "row_count": table_row_count,
                 "columns": detected_columns,
+
+                # Sandbox isolation metadata returned to frontend
+                "sandbox_id": request.sandbox_id,
+                "sandbox_schema": sandbox["sandbox_schema"] if sandbox else None,
+                "sandbox_owner": sandbox["owner"] if sandbox else None,
+                "project_id": sandbox["project_id"] if sandbox else None,
+                "target_environment": sandbox["target_environment"] if sandbox else None,
+                "isolation_status": "ISOLATED" if sandbox else "NO_SANDBOX",
             })
 
+        if request.sandbox_id and sandbox:
+            sandboxes = load_sandboxes()
+
+            existing_tables = set(
+                sandboxes[request.sandbox_id].get("selected_tables", [])
+            )
+
+            generated_table_names = {
+                dataset["table_name"] for dataset in generated_datasets
+            }
+
+            sandboxes[request.sandbox_id]["selected_tables"] = sorted(
+                list(existing_tables.union(generated_table_names))
+            )
+
+            sandboxes[request.sandbox_id]["updated_at"] = datetime.now().isoformat()
+
+            save_sandboxes(sandboxes)
+
+        save_dataset_registry(datasets)
+            
         return {
             "status": "SUCCESS",
             "message": f"Generated test data for {len(generated_datasets)} table(s).",
+            "sandbox": sandbox,
             "datasets": generated_datasets,
         }
 
@@ -681,7 +1695,6 @@ def generate_test_data_from_source(request: GenerateFromSourceRequest):
             "status": "FAILED",
             "message": str(e),
         }
-
 
 @app.get("/datasets")
 def get_datasets():
@@ -754,6 +1767,22 @@ def run_job(request: RunJobRequest):
             "message": "Dataset ID not found. Please upload, generate, or select a dataset first.",
         }
 
+    validation = validate_pre_run_internal(
+        validation_items=[{
+            "dataset_id": request.dataset_id,
+            "masking_rules": request.masking_rules,
+        }],
+        user_role=request.user_role,
+    )
+
+    if not validation["can_run"]:
+        return {
+            "status": "FAILED",
+            "error_type": "PRE_RUN_VALIDATION_FAILED",
+            "message": validation["summary"],
+            "validation": validation,
+        }
+
     dataset = datasets[request.dataset_id]
     job_id = str(uuid.uuid4())
     job_started_at = datetime.now()
@@ -811,6 +1840,25 @@ def run_multiple_jobs(request: RunMultipleJobsRequest):
         return {
             "status": "FAILED",
             "message": "No datasets provided for multi-table run.",
+        }
+
+    validation = validate_pre_run_internal(
+        validation_items=[
+            {
+                "dataset_id": item.dataset_id,
+                "masking_rules": item.masking_rules,
+            }
+            for item in request.datasets
+        ],
+        user_role=request.user_role,
+    )
+
+    if not validation["can_run"]:
+        return {
+            "status": "FAILED",
+            "error_type": "PRE_RUN_VALIDATION_FAILED",
+            "message": validation["summary"],
+            "validation": validation,
         }
 
     job_id = str(uuid.uuid4())
